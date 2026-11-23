@@ -1,6 +1,6 @@
 # Architektura
 
-Ten dokument pokazuje, z czego składa się starter, którędy płyną dane i jak dodać własną funkcję tak, żeby nie wchodzić w drogę reszcie zespołu. Pełny projekt i źródła są w [specs/starter-architecture.md](../specs/starter-architecture.md).
+Ten dokument pokazuje, z czego składa się Kwadratowy Kompas, którędy płyną dane i jak dodać własną funkcję tak, żeby nie wchodzić w drogę reszcie zespołu. Architekturę przejęliśmy z szablonu; jej pełny projekt i źródła są w [specs/starter-architecture.md](../specs/starter-architecture.md).
 
 ## Elementy
 
@@ -53,11 +53,11 @@ Jest generowany przez Convex i **commitowany**, żeby świeży klon przechodził
 
 Nazwa pliku w `convex/` staje się częścią ścieżki API, więc pliki nazywamy rolami:
 
-| Plik                          | Eksport     | Odwołanie                       |
-| ----------------------------- | ----------- | ------------------------------- |
-| `convex/<nazwa>/queries.ts`   | `list`      | `api.<nazwa>.queries.list`      |
-| `convex/<nazwa>/mutations.ts` | `add`       | `api.<nazwa>.mutations.add`     |
-| `convex/<nazwa>/actions.ts`   | `summarize` | `api.<nazwa>.actions.summarize` |
+| Plik                          | Eksport   | Odwołanie                     |
+| ----------------------------- | --------- | ----------------------------- |
+| `convex/<nazwa>/queries.ts`   | `list`    | `api.<nazwa>.queries.list`    |
+| `convex/<nazwa>/mutations.ts` | `add`     | `api.<nazwa>.mutations.add`   |
+| `convex/<nazwa>/actions.ts`   | `extract` | `api.<nazwa>.actions.extract` |
 
 Funkcje wewnętrzne (`internalQuery`, `internalMutation`, `internalAction`) są dostępne jako `internal.<nazwa>.<plik>.*` i nie trafiają do `api`.
 

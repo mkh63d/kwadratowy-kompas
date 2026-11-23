@@ -101,7 +101,7 @@ Ograniczenia, o których warto pamiętać ([źródło](https://docs.convex.dev/t
 - funkcje działają w mocku `edge-runtime`, a nie w prawdziwym środowisku Convex, więc część
   wbudowanych API może zachowywać się inaczej,
 - wyszukiwanie pełnotekstowe jest uproszczone, więc kolejność wyników (trafność) może być inna,
-- test nie zastąpi próby na prawdziwym deploymencie, np. przed demo.
+- test nie zastąpi próby na prawdziwym deploymencie.
 
 Adaptery AI testujemy bez sieci: `vi.stubGlobal("fetch", …)` i odpowiedzi z fixture’ów. Domyślny
 dostawca `mock` jest deterministyczny, więc nie potrzeba żadnych kluczy.

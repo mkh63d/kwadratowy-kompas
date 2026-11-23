@@ -25,7 +25,7 @@ Klucze trafiają tylko do środowiska Convex. Nigdy do zmiennych `VITE_*` (wpada
 
 ## Dostawca `mock`
 
-Domyślny, bez klucza i sieci. Jest deterministyczny (to samo wejście daje ten sam wynik), więc służy testom, demo i jako siatka bezpieczeństwa: gdy prawdziwy model zawiedzie na scenie, jedno polecenie wraca do `mock`.
+Domyślny, bez klucza i sieci. Jest deterministyczny (to samo wejście daje ten sam wynik), więc służy testom i jako siatka bezpieczeństwa: gdy prawdziwy model zawiedzie, jedno polecenie wraca do `mock`.
 
 Scenariusze wybiera początek promptu:
 
@@ -120,5 +120,5 @@ flowchart LR
 - llama.cpp: serwer domyślnie słucha na `127.0.0.1` i obsługuje `--api-key` ([README](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)).
 - **Ollama lokalnie ignoruje klucz API** ([dokumentacja](https://docs.ollama.com/api/openai-compatibility)), więc nie wystawiaj jej poza `localhost` bez uwierzytelniającego proxy przed nią.
 - Klucz tylko w środowisku Convex, nigdy w repozytorium, logach ani przeglądarce. CI uruchamia gitleaks.
-- **Wstrzyknięcie promptu.** Tekst wejściowy (np. treść pobrana ze źródła zewnętrznego) może sterować modelem („zignoruj instrukcje i…”). Każda akcja AI waliduje wynik schematem Zod, nie daje modelowi narzędzi i ogranicza ilość oraz długość wejścia w samej akcji, nie tylko w UI. Wynik modelu nie trafia do publikacji bez moderacji człowieka. Gdy dodajesz narzędzia, nowe źródła danych albo większe limity, ocenę trzeba powtórzyć.
+- **Wstrzyknięcie promptu.** Tekst wejściowy (np. treść pobrana ze źródła zewnętrznego) może sterować modelem („zignoruj instrukcje i…”). Każda akcja AI musi walidować wynik schematem Zod, nie może dawać modelowi narzędzi i musi ograniczać ilość oraz długość wejścia w samej akcji, nie tylko w UI. Wynik modelu nie trafia do publikacji bez moderacji człowieka. Gdy dodajesz narzędzia, nowe źródła danych albo większe limity, ocenę trzeba powtórzyć.
 - **Publiczna akcja AI bez uwierzytelniania kosztuje.** Przy prawdziwym kluczu każdy, kto zna publiczny `VITE_CONVEX_URL`, może wołać taką akcję w pętli na Twój koszt. Starter nie ma logowania ani limitu zapytań. Akcję, której nie musi wołać przeglądarka, rób wewnętrzną (`internalAction`, wywoływaną z backendu). Zanim prawdziwy klucz trafi na produkcję, publiczna akcja AI dostaje limit (np. [komponent rate-limiter dla Convex](https://www.convex.dev/components/rate-limiter), po sprawdzeniu licencji i utrzymania zgodnie z zasadami zależności) i uwierzytelnianie.

@@ -3,7 +3,7 @@ name: spec-driven-development
 description: Work from a short written spec instead of coding straight away. Use when starting any feature or non-trivial change in this repo; skip it for small fixes.
 ---
 
-# Spec-driven development (light hackathon mode)
+# Spec-driven development
 
 Write the spec first, then build exactly what it says. The spec lives in `specs/<feature>.md` and fits on one page.
 

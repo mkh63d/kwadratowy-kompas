@@ -11,7 +11,7 @@ describe("App", () => {
     vi.stubEnv("VITE_CONVEX_URL", "");
     render(<App />);
     expect(
-      screen.getByRole("heading", { level: 1, name: "HackNation Starter" }),
+      screen.getByRole("heading", { level: 1, name: "Kwadratowy Kompas" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Tryb offline/)).toBeInTheDocument();
   });

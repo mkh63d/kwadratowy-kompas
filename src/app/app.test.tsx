@@ -30,7 +30,7 @@ describe("app shell", () => {
     renderAt("/", false);
     expect(screen.queryByText(/Tryb offline/)).not.toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "HackNation Starter" }),
+      screen.getByRole("heading", { level: 1, name: "Kwadratowy Kompas" }),
     ).toBeInTheDocument();
   });
 

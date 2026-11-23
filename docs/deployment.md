@@ -60,7 +60,7 @@ Poniższa lista to ścieżka ręczna, na wypadek gdyby skrypt nie zadziałał.
 1. Zaloguj się: `npx convex login`, utwórz projekt (np. przez `npx convex dev`, który zapisze `CONVEX_DEPLOYMENT` w `.env.local`).
 2. W [panelu Convex](https://dashboard.convex.dev/) otwórz deployment **produkcyjny**, wejdź na stronę _Deployment Settings_, kartę _General_, i kliknij _Generate Production Deploy Key_. Przy ustawianiu uprawnień klucza włącz `deployment:deploy` ([Convex: Using Convex with Vercel](https://docs.convex.dev/production/hosting/vercel)).
 3. Klucz ma postać `prod:<nazwa-deploymentu>|<token>`. Użyj klucza produkcyjnego, nie deweloperskiego: `convex deploy` z kluczem deweloperskim wdroży funkcje na deployment deweloperski, a nie na produkcję, więc front dostałby adres złego backendu.
-4. Ustaw zmienne backendu na deploymentcie produkcyjnym (nie ma ich w `.env.local` ani w GitHubie): `npx convex env set AI_PROVIDER mock --prod`. Pełna lista i ścieżki dostawców: [ai-providers.md](ai-providers.md). `mock` jest bezpieczną wartością domyślną na demo.
+4. Ustaw zmienne backendu na deploymentcie produkcyjnym (nie ma ich w `.env.local` ani w GitHubie): `npx convex env set AI_PROVIDER mock --prod`. Pełna lista i ścieżki dostawców: [ai-providers.md](ai-providers.md). `mock` jest bezpieczną wartością domyślną.
 
 ### 2. Vercel: projekt i trzy identyfikatory
 

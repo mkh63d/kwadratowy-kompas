@@ -1,13 +1,17 @@
-# HackNation Starter
+# Kwadratowy Kompas
 
-Kwadratowy Kompas zbiera okazje z Łodzi w jednym miejscu. Frontend to Vite + React + TypeScript + Tailwind wdrażany na Vercel, backend to Convex. AI wyciąga okazje ze źródeł, a człowiek moderuje je przed publikacją. Zespół pracuje na równoległych ścieżkach (git worktree).
+Kwadratowy Kompas ma zbierać w jednym miejscu to, co dzieje się w Łodzi: dofinansowania, konkursy, hackathony, szkolenia, wydarzenia branżowe i newsy. Docelowo AI wyciąga wpisy ze źródeł, a człowiek (moderator) zatwierdza je przed publikacją. Aplikacja ma działać pod adresem `app.kwadratkreatywny.pl`.
+
+## Stan projektu
+
+Repozytorium jest na etapie szkieletu. Działa strona główna i strona 404, warstwa dostawców AI w backendzie (mock i adapter zgodny z OpenAI) oraz narzędzia zespołu: testy, CI i ścieżki pracy. Zbierania wpisów, moderacji, logowania ani wdrożenia pod docelowym adresem jeszcze nie ma. Plan i specyfikacje kolejnych etapów są w katalogu [specs/](specs/).
 
 ## Spis treści
 
-- [Nowy projekt z szablonu](#nowy-projekt-z-szablonu)
+- [Stack](#stack)
 - [Wymagania](#wymagania)
 - [Szybki start (tryb offline)](#szybki-start-tryb-offline)
-- [Szybki start z Convex](#szybki-start-z-convex)
+- [Lokalny backend Convex](#lokalny-backend-convex)
 - [Komendy](#komendy)
 - [Struktura repozytorium](#struktura-repozytorium)
 - [Dostawcy AI](#dostawcy-ai)
@@ -18,22 +22,21 @@ Kwadratowy Kompas zbiera okazje z Łodzi w jednym miejscu. Frontend to Vite + Re
 - [Deploy](#deploy)
 - [Problemy](#problemy)
 - [Dokumentacja](#dokumentacja)
+- [Plan rozwoju](#plan-rozwoju)
+- [Licencja](#licencja)
 
-## Nowy projekt z szablonu
+## Stack
 
-To repozytorium jest szablonem GitHuba. Na każdy projekt zakładasz własną kopię:
-
-1. Na stronie repozytorium kliknij **Use this template**, utwórz nowe repozytorium i sklonuj je.
-2. `npm ci`, potem `npm run dev:frontend`. Całość działa lokalnie z mockiem AI, bez żadnego konta.
-3. Gdy potrzebujesz publicznego adresu: `npm run setup:deploy`. Skrypt zakłada projekt Convex i Vercel, a cztery sekrety wdrożeniowe wpisuje do środowiska `production` w GitHubie. Zajmuje to kilka minut. Zanim ruszysz, zaloguj się: `gh auth login`, `npx convex login`, `npx vercel@65.16.0 login`. Sam szablon nigdy nie dostaje sekretów, więc skrypt się na nim zatrzyma.
-
-Podgląd planu bez zmian: `npm run setup:deploy -- --dry-run`. Szczegóły w [docs/deployment.md](docs/deployment.md).
+- Frontend: Vite + React 19 + TypeScript (strict) + Tailwind 4, wdrażany na Vercel.
+- Backend: [Convex](https://www.convex.dev/) (baza, zapytania, mutacje, akcje).
+- Walidacja: Zod na każdej granicy (zmienne środowiskowe, odpowiedzi AI, formularze).
+- Testy: Vitest + Testing Library, `convex-test`, smoke Playwright.
 
 ## Wymagania
 
 - Node 24 (wersja w `.nvmrc`; `package.json` wymaga `>=24.15.0 <25`) i npm. Yarn i pnpm nie są używane.
 - Git. Do pracy z issue i PR: [GitHub CLI](https://cli.github.com/) (`gh auth login`).
-- Konto Convex jest opcjonalne: bez niego aplikacja działa w trybie offline lub z lokalnym backendem.
+- Konto Convex nie jest potrzebne: aplikacja działa w trybie offline albo z lokalnym backendem.
 
 Wersję z `.nvmrc` ustawisz menedżerem Node, np. [fnm](https://github.com/Schniz/fnm) (`fnm use`) lub nvm (`nvm use`).
 
@@ -42,8 +45,8 @@ Wersję z `.nvmrc` ustawisz menedżerem Node, np. [fnm](https://github.com/Schni
 Bez konta i bez klucza. Aplikacja startuje bez klienta Convex i pokazuje baner „offline”.
 
 ```bash
-git clone <adres-repozytorium>
-cd <katalog-repozytorium>
+git clone https://github.com/mkh63d/kwadratowy-kompas.git
+cd kwadratowy-kompas
 fnm use   # lub nvm use; zła wersja Node przerwie npm ci
 npm ci
 npm run dev:frontend
@@ -51,27 +54,18 @@ npm run dev:frontend
 
 Otwórz [http://localhost:5173](http://localhost:5173). Gdy port jest zajęty, Vite zgłasza błąd zamiast po cichu wybrać inny (`strictPort`). Co wtedy zrobić, opisuje [docs/troubleshooting.md](docs/troubleshooting.md).
 
-## Szybki start z Convex
+## Lokalny backend Convex
 
-Dane aplikacji trzyma Convex, więc pełne działanie wymaga backendu. Są dwie drogi.
-
-**A. Lokalny backend bez konta** (najszybciej, nic nie opuszcza maszyny):
+Lokalny backend nie wymaga konta i nic nie opuszcza maszyny:
 
 ```bash
 # PowerShell: $env:CONVEX_AGENT_MODE = "anonymous"
 CONVEX_AGENT_MODE=anonymous npx convex dev --once
 ```
 
-Komenda tworzy lokalny deployment i zapisuje `CONVEX_DEPLOYMENT` oraz `VITE_CONVEX_URL` w `.env.local`. Potem `npm run dev` uruchamia Convex i Vite razem.
+Komenda tworzy lokalny deployment i zapisuje `CONVEX_DEPLOYMENT` oraz `VITE_CONVEX_URL` w `.env.local`. Potem `npm run dev` uruchamia Convex i Vite razem. Plik `.env.local` jest poza gitem. Nie wpisuj w niego sekretów pod prefiksem `VITE_`, bo trafiają do paczki w przeglądarce.
 
-**B. Konto Convex** (współdzielony deployment w chmurze, wymagany dla ścieżek z `npm run lane:new` bez `--local`):
-
-```bash
-npx convex login
-npm run dev
-```
-
-Pierwsze uruchomienie zapyta o projekt i zapisze konfigurację w `.env.local`. Plik jest poza gitem. Nie wpisuj w niego sekretów pod prefiksem `VITE_`, bo trafiają do paczki w przeglądarce.
+Konto Convex (`npx convex login`, potem `npm run dev`) i współdzielony deployment w chmurze są potrzebne tylko ścieżkom z `npm run lane:new` bez `--local`.
 
 Plik `.env.example` wymienia wszystkie zmienne i mówi, gdzie każda trafia: do środowiska Convex, do `.env.local` czy do sekretów GitHub. `.env.e2e` służy tylko testom e2e.
 
@@ -103,6 +97,7 @@ convex/<nazwa>/{tables,queries,mutations,actions}.ts   backend funkcji
 convex/ai/                         warstwa dostawców AI (mock, OpenAI-compatible)
 src/app/, src/lib/, src/components/ui/, convex/lib/    kod wspólny
 scripts/                           lane, overlap, codegen-check, hot-files
+specs/                             specyfikacje i plan
 .github/                           CI, deploy, lista plików wspólnych
 ```
 
@@ -112,7 +107,7 @@ Zasada: funkcje dodają pliki, nie edytują wspólnych. Nową funkcję dodaje si
 
 Domyślnie działa `mock`, który jest też siatką bezpieczeństwa, gdy prawdziwy model zawiedzie. Prawdziwy model (dowolny endpoint zgodny z OpenAI) włącza się przez `AI_PROVIDER=openai-compatible` oraz `AI_BASE_URL`, `AI_MODEL` i `AI_API_KEY` w środowisku Convex. Klucze nigdy nie trafiają do `VITE_*` ani do `.env.local`. Między prawdziwymi dostawcami nie ma automatycznego przełączania.
 
-**Bielik i PLLuM.** Modele polskie podłączamy przez ten sam adapter zgodny z OpenAI. Chmura Convex nie dosięgnie prywatnego adresu WireGuard, więc są trzy drogi: (1) uwierzytelniona brama HTTPS przed modelem, (2) osobny worker w sieci modelu, który tylko wychodzi do Convex, (3) bezpośredni, osiągalny endpoint. Zaimplementowana jest droga 3, drogi 1 i 2 są opisane w dokumentacji. Nigdy nie otwieraj portu modelu do internetu. Licencje PLLuM różnią się między modelami, więc sprawdź kartę modelu. Szczegóły, tryby strukturalne i bezpieczeństwo: [docs/ai-providers.md](docs/ai-providers.md).
+**Bielik i PLLuM.** Modele polskie podłącza się przez ten sam adapter zgodny z OpenAI. Chmura Convex nie dosięgnie prywatnego adresu WireGuard, więc są trzy drogi: (1) uwierzytelniona brama HTTPS przed modelem, (2) osobny worker w sieci modelu, który tylko wychodzi do Convex, (3) bezpośredni, osiągalny endpoint. Zaimplementowana jest droga 3, drogi 1 i 2 są opisane w dokumentacji. Nigdy nie otwieraj portu modelu do internetu. Licencje PLLuM różnią się między modelami, więc sprawdź kartę modelu. Szczegóły, tryby strukturalne i bezpieczeństwo: [docs/ai-providers.md](docs/ai-providers.md).
 
 ## Praca zespołowa i ścieżki (lanes)
 
@@ -140,15 +135,9 @@ Reguły dla agentów (i ludzi) są w [CLAUDE.md](CLAUDE.md). Zadania pochodzą z
 
 ## Deploy
 
-Backend wdraża Convex, frontend Vercel, a oba kroki uruchamia workflow `.github/workflows/deploy.yml`. W `vercel.json` automatyczne wdrożenia z Gita są wyłączone, więc wdraża tylko workflow.
+Kompas nie jest jeszcze wdrożony. Środowiska (deploymenty Convex, projekt Vercel, sekrety w GitHubie, domena `app.kwadratkreatywny.pl`) to osobny etap planu.
 
-Domyślna droga to `npm run setup:deploy` (opis w sekcji [Nowy projekt z szablonu](#nowy-projekt-z-szablonu)). Ręcznie:
-
-1. Zaimportuj repozytorium jako projekt w Vercel i wykonaj `vercel link`.
-2. Dodaj sekrety w środowisku `production` na GitHubie: `CONVEX_DEPLOY_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`. Bez nich workflow niczego nie wdroży i napisze, których brakuje.
-3. `VITE_CONVEX_URL` ustawia przy buildzie `npx convex deploy`. Nie wpisuj go w zmiennych projektu Vercel.
-
-Pełna konfiguracja, w tym ochrona gałęzi `main`: [docs/deployment.md](docs/deployment.md).
+Mechanizm jest w repozytorium: backend wdraża Convex, frontend Vercel, a oba kroki uruchamia workflow `.github/workflows/deploy.yml`. W `vercel.json` automatyczne wdrożenia z Gita są wyłączone, więc wdraża tylko workflow. Bez sekretów `CONVEX_DEPLOY_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID` i `VERCEL_PROJECT_ID` w środowisku `production` workflow niczego nie wdroży i napisze, których brakuje. Konfiguracja krok po kroku (skrypt `npm run setup:deploy` albo ręcznie) i ochrona gałęzi `main`: [docs/deployment.md](docs/deployment.md).
 
 ### Sentry (opcjonalnie)
 
@@ -168,6 +157,10 @@ Opisane tam: antywirus przechwytujący TLS, ścieżki i końce linii na Windowsi
 - [docs/deployment.md](docs/deployment.md): wdrożenie Convex i Vercel.
 - [docs/troubleshooting.md](docs/troubleshooting.md): typowe błędy.
 - [CONTRIBUTING.md](CONTRIBUTING.md): zasady zespołu. [CLAUDE.md](CLAUDE.md): reguły dla agentów.
+
+## Plan rozwoju
+
+Funkcje powstają etapami, każda najpierw jako krótka specyfikacja. Plan i specyfikacje są w katalogu [specs/](specs/). Opis funkcji trafia do tego README dopiero wtedy, gdy funkcja działa.
 
 ## Licencja
 
