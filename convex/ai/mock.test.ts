@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createMockProvider } from "./mock";
 import { AIProviderError } from "./types";
 
-const notesSummary = z.object({
+const summarySchema = z.object({
   summary: z.string(),
   keyPoints: z.array(z.string()),
 });
@@ -36,13 +36,13 @@ describe("mock provider", () => {
     expect(a).toEqual(b);
     const s1 = await provider.generateStructuredOutput({
       prompt: "x",
-      schema: notesSummary,
-      schemaName: "notesSummary",
+      schema: summarySchema,
+      schemaName: "summary",
     });
     const s2 = await provider.generateStructuredOutput({
       prompt: "x",
-      schema: notesSummary,
-      schemaName: "notesSummary",
+      schema: summarySchema,
+      schemaName: "summary",
     });
     expect(s1).toEqual(s2);
   });
@@ -75,18 +75,18 @@ describe("mock provider", () => {
     const error = await failure(
       provider.generateStructuredOutput({
         prompt: "[mock:error]",
-        schema: notesSummary,
-        schemaName: "notesSummary",
+        schema: summarySchema,
+        schemaName: "summary",
       }),
     );
     expect(error.code).toBe("unavailable");
   });
 
-  it("returns the notesSummary fixture validated by the schema", async () => {
+  it("returns the summary fixture validated by the schema", async () => {
     const result = await provider.generateStructuredOutput({
       prompt: "x",
-      schema: notesSummary,
-      schemaName: "notesSummary",
+      schema: summarySchema,
+      schemaName: "summary",
     });
     expect(result.data.summary.length).toBeGreaterThan(0);
     expect(result.data.keyPoints.length).toBeGreaterThan(0);
@@ -121,7 +121,7 @@ describe("mock provider", () => {
       provider.generateStructuredOutput({
         prompt: "x",
         schema: z.object({ other: z.number() }),
-        schemaName: "notesSummary",
+        schemaName: "summary",
       }),
     );
     expect(error.code).toBe("bad_response");

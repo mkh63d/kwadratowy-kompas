@@ -1,6 +1,6 @@
 # Dostawcy AI
 
-Wszystkie wywołania modeli idą przez akcje Convex (`convex/notes/actions.ts` jest przykładem). Akcje mogą wołać `fetch`, a zapytania i mutacje nie, według [dokumentacji Convex o środowiskach uruchomieniowych](https://docs.convex.dev/functions/runtimes). Frontend nie rozmawia z modelem i nie widzi klucza. Kod warstwy AI: `convex/ai/`.
+Wszystkie wywołania modeli idą przez akcje Convex. Akcje mogą wołać `fetch`, a zapytania i mutacje nie, według [dokumentacji Convex o środowiskach uruchomieniowych](https://docs.convex.dev/functions/runtimes). Frontend nie rozmawia z modelem i nie widzi klucza. Kod warstwy AI: `convex/ai/`.
 
 ## Wybór dostawcy i zmienne
 
@@ -35,7 +35,7 @@ Scenariusze wybiera początek promptu:
 | `[mock:timeout]` | błąd `timeout` (ponawiany)                                                     |
 | inny             | `generateText` zwraca polskie podsumowanie z liczbą znaków i początkiem tekstu |
 
-Wynik strukturalny to gotowy fixture przypisany do `schemaName` (dla notatek: `notesSummary`) i zwalidowany schematem. Nieznane `schemaName` daje błąd `config`.
+Wynik strukturalny to gotowy fixture przypisany do `schemaName` (w mocku jest jeden: `summary`) i zwalidowany schematem. Nieznane `schemaName` daje błąd `config`.
 
 ## Dodanie własnego dostawcy
 

@@ -29,7 +29,7 @@ npm run verify   # format:check, lint, typecheck, test:coverage, build, test:e2e
 | `npm run test:coverage`            | testy z pokryciem (v8)                                    |
 | `npm run test:e2e`                 | Playwright: buduje pakiet w trybie `e2e` i go serwuje     |
 | `npx vitest run --project backend` | tylko jeden projekt                                       |
-| `npx vitest run convex/notes`      | tylko pliki pasujące do ścieżki                           |
+| `npx vitest run convex/ai`         | tylko pliki pasujące do ścieżki                           |
 | `npx playwright install chromium`  | jednorazowo: przeglądarka dla e2e (w CI robi to workflow) |
 
 ## Raporty JSON

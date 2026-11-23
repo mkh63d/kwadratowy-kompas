@@ -11,14 +11,10 @@ const PROVIDER = "mock";
 const MODEL = "mock";
 
 const FIXTURES: Record<string, unknown> = {
-  notesSummary: {
+  summary: {
     summary:
-      "Notatka omawia kluczowe ustalenia i kolejne kroki. To przykładowe podsumowanie wygenerowane przez dostawcę testowego.",
-    keyPoints: [
-      "Najważniejsze ustalenie z notatki",
-      "Kolejny krok do wykonania",
-      "Otwarte pytanie do omówienia",
-    ],
+      "To przykładowe podsumowanie wygenerowane przez dostawcę testowego.",
+    keyPoints: ["Pierwszy punkt", "Drugi punkt", "Trzeci punkt"],
   },
 };
 

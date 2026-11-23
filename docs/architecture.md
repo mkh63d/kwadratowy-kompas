@@ -12,13 +12,11 @@ Ten dokument pokazuje, z czego składa się starter, którędy płyną dane i ja
 | Funkcje (features) | `src/features/<nazwa>/` i `convex/<nazwa>/`                               | Wszystko, co należy do jednej funkcji, w dwóch katalogach o tej samej nazwie.                                |
 | Kod wspólny        | `src/app/`, `src/lib/`, `src/components/ui/`, `convex/lib/`, `convex/ai/` | Router, layout, env, prymitywy UI. Zmiany tylko w osobnym PR (patrz niżej).                                  |
 
-Przykładowa funkcja to `notes`: lista notatek, formularz dodawania i przycisk „Streść” wywołujący AI.
-
 ## Przepływ danych
 
 ```mermaid
 flowchart LR
-  UI[React: src/features/notes] -->|useQuery / useMutation / useAction| API[api.notes.*]
+  UI[React: src/features/<nazwa>] -->|useQuery / useMutation / useAction| API[api.<nazwa>.*]
   API --> Q[queries.ts]
   API --> M[mutations.ts]
   API --> A[actions.ts]
@@ -30,9 +28,9 @@ flowchart LR
   P --> Ext[Endpoint zgodny z OpenAI]
 ```
 
-- Zapytania (`queries.ts`) czytają bazę, a React subskrybuje je reaktywnie: po zapisie notatki lista odświeża się sama.
-- Mutacje (`mutations.ts`) zapisują dane i walidują wejście. Limit długości notatki (`convex/notes/limits.ts`) jest wspólny dla backendu i UI, dlatego plik nie importuje niczego serwerowego.
-- Akcje (`actions.ts`) mogą wołać `fetch`, więc tylko one rozmawiają z modelem. Akcja `summarize` czyta notatki przez `ctx.runQuery(api.notes.queries.list)`, buduje prompt i prosi dostawcę o ustrukturyzowaną odpowiedź zwalidowaną schematem Zod. Frontend nigdy nie widzi klucza ani nie łączy się z modelem.
+- Zapytania (`queries.ts`) czytają bazę, a React subskrybuje je reaktywnie: po zapisie lista odświeża się sama.
+- Mutacje (`mutations.ts`) zapisują dane i walidują wejście. Stałe wspólne dla backendu i UI (np. limit długości pola) trzymaj w osobnym pliku funkcji, który nie importuje niczego serwerowego.
+- Akcje (`actions.ts`) mogą wołać `fetch`, więc tylko one rozmawiają z modelem. Akcja czyta dane przez `ctx.runQuery(api.<nazwa>.queries.<funkcja>)`, buduje prompt i prosi dostawcę o ustrukturyzowaną odpowiedź zwalidowaną schematem Zod. Frontend nigdy nie widzi klucza ani nie łączy się z modelem.
 - Konfiguracja AI pochodzi ze zmiennych środowiska wdrożenia Convex (`npx convex env set ...`), nie z `.env.local`.
 
 ## Gdzie leży logika biznesowa
@@ -55,13 +53,13 @@ Jest generowany przez Convex i **commitowany**, żeby świeży klon przechodził
 
 Nazwa pliku w `convex/` staje się częścią ścieżki API, więc pliki nazywamy rolami:
 
-| Plik                        | Eksport     | Odwołanie                     |
-| --------------------------- | ----------- | ----------------------------- |
-| `convex/notes/queries.ts`   | `list`      | `api.notes.queries.list`      |
-| `convex/notes/mutations.ts` | `add`       | `api.notes.mutations.add`     |
-| `convex/notes/actions.ts`   | `summarize` | `api.notes.actions.summarize` |
+| Plik                          | Eksport     | Odwołanie                       |
+| ----------------------------- | ----------- | ------------------------------- |
+| `convex/<nazwa>/queries.ts`   | `list`      | `api.<nazwa>.queries.list`      |
+| `convex/<nazwa>/mutations.ts` | `add`       | `api.<nazwa>.mutations.add`     |
+| `convex/<nazwa>/actions.ts`   | `summarize` | `api.<nazwa>.actions.summarize` |
 
-Funkcje wewnętrzne (np. `seed.ts`, `internalMutation`) są dostępne jako `internal.notes.seed.*` i nie trafiają do `api`.
+Funkcje wewnętrzne (`internalQuery`, `internalMutation`, `internalAction`) są dostępne jako `internal.<nazwa>.<plik>.*` i nie trafiają do `api`.
 
 ## Jak dodać funkcję, krok po kroku
 
@@ -69,7 +67,7 @@ Podział na dwa PR-y wynika z pliku wspólnego `convex/schema.ts`: kontrakt dany
 
 **PR 1: kontrakt (`chore/<n>-contract-<slug>`, tytuł `feat(contract): ...`)**
 
-1. Utwórz `convex/<nazwa>/tables.ts` z tabelami funkcji, wzorując się na `convex/notes/tables.ts` (eksportuje obiekt `notesTables` z `defineTable`).
+1. Utwórz `convex/<nazwa>/tables.ts` z tabelami funkcji (eksportuje obiekt `<nazwa>Tables` z `defineTable`).
 2. Dodaj do `convex/schema.ts` jedną linię importu i jedno `...<nazwa>Tables`.
 3. Zregeneruj `convex/_generated` (`npx convex codegen`) i dodaj test kontraktu, jeśli jest potrzebny.
 4. Zmiany schematu są wyłącznie addytywne: nowe tabele i nowe pola opcjonalne. Zmiana nazwy lub usunięcie pola to osobna decyzja zespołu.
@@ -110,6 +108,6 @@ Lista jest w [.github/hot-files.txt](../.github/hot-files.txt) i to jedyne źró
 
 CI odrzuca PR mieszający pliki wspólne ze zwykłymi, chyba że w opisie jest zaznaczone pole `- [ ] Zmiana plików wspólnych uzgodniona z zespołem` (po zaznaczeniu użyj „Re-run failed jobs”). Typowa funkcja tego nie potrzebuje, jeśli trzymasz podział na dwa PR-y.
 
-## Dlaczego `declare const process` w `convex/notes/actions.ts`
+## Dlaczego `declare const process` w akcjach Convex
 
-Frontendowy `tsconfig.app.json` typuje także ten plik, bo `convex/_generated/api.d.ts` importuje typy akcji. Gdyby dodać tam typy Node, w kodzie `src/` zniknęłyby błędy dotyczące API przeglądarki. Dlatego akcja deklaruje tylko to, czego używa (`process.env`), zamiast włączać `@types/node`.
+Frontendowy `tsconfig.app.json` typuje także pliki akcji, bo `convex/_generated/api.d.ts` importuje typy akcji. Gdyby dodać tam typy Node, w kodzie `src/` zniknęłyby błędy dotyczące API przeglądarki. Dlatego taki plik deklaruje tylko to, czego używa (`process.env`), zamiast włączać `@types/node`.

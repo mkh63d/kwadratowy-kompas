@@ -3,12 +3,6 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildRoutes, collectFeatures } from "./router";
 
-const useQueryMock = vi.hoisted(() => vi.fn());
-vi.mock("convex/react", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("convex/react")>()),
-  useQuery: useQueryMock,
-}));
-
 function renderAt(
   path: string,
   offline: boolean,
@@ -23,32 +17,21 @@ function renderAt(
 describe("app shell", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
-    useQueryMock.mockReset();
   });
 
-  it("shows the offline banner and no backend status when offline", () => {
+  it("shows the offline banner when offline", () => {
     vi.stubEnv("VITE_CONVEX_URL", "");
     renderAt("/", true);
     expect(screen.getByText(/Tryb offline/)).toBeInTheDocument();
-    expect(screen.queryByText(/Backend połączony/)).not.toBeInTheDocument();
-    expect(useQueryMock).not.toHaveBeenCalled();
   });
 
-  it("shows the backend status with the note count when online", () => {
+  it("renders the home page without the offline banner when online", () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://example.convex.cloud");
-    useQueryMock.mockReturnValue([{}, {}, {}]);
     renderAt("/", false);
     expect(screen.queryByText(/Tryb offline/)).not.toBeInTheDocument();
     expect(
-      screen.getByText("Backend połączony - 3 notatek"),
+      screen.getByRole("heading", { level: 1, name: "HackNation Starter" }),
     ).toBeInTheDocument();
-  });
-
-  it("shows a loading state while the query is pending", () => {
-    vi.stubEnv("VITE_CONVEX_URL", "https://example.convex.cloud");
-    useQueryMock.mockReturnValue(undefined);
-    renderAt("/", false);
-    expect(screen.getByText(/Łączenie z backendem/)).toBeInTheDocument();
   });
 
   it("renders the not-found page with a link home", () => {

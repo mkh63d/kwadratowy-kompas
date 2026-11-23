@@ -21,7 +21,6 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "seed": "convex run notes/seed:run",
     "lane:new": "node scripts/lane.mjs new",
     "lane:list": "node scripts/lane.mjs list",
     "lane:rm": "node scripts/lane.mjs rm",

@@ -62,7 +62,7 @@ Przykładowe notatki zapisują się w bazie Convex, więc pełne demo potrzebuje
 CONVEX_AGENT_MODE=anonymous npx convex dev --once
 ```
 
-Komenda tworzy lokalny deployment i zapisuje `CONVEX_DEPLOYMENT` oraz `VITE_CONVEX_URL` w `.env.local`. Potem `npm run dev` uruchamia Convex i Vite razem. Dane demo załaduje `npm run seed`.
+Komenda tworzy lokalny deployment i zapisuje `CONVEX_DEPLOYMENT` oraz `VITE_CONVEX_URL` w `.env.local`. Potem `npm run dev` uruchamia Convex i Vite razem.
 
 **B. Konto Convex** (współdzielony deployment w chmurze, wymagany dla ścieżek z `npm run lane:new` bez `--local`):
 
@@ -87,7 +87,6 @@ npx convex env set AI_PROVIDER mock
 | ------------------------------------------------------- | ---------------------------------------------------------------- |
 | `npm run dev`                                           | Convex + Vite razem (pełne środowisko)                           |
 | `npm run dev:frontend`                                  | sam Vite (offline, dopóki `.env.local` nie ma `VITE_CONVEX_URL`) |
-| `npm run seed`                                          | ładuje przykładowe notatki do Convex                             |
 | `npm run build` / `npm run preview`                     | build produkcyjny i jego podgląd                                 |
 | `npm run typecheck`, `npm run lint`, `npm run format`   | TypeScript, ESLint, Prettier                                     |
 | `npm test`, `npm run test:coverage`, `npm run test:e2e` | testy jednostkowe, pokrycie, smoke Playwright                    |

@@ -2,11 +2,6 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
-vi.mock("convex/react", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("convex/react")>()),
-  useQuery: () => [],
-}));
-
 describe("App", () => {
   afterEach(() => {
     vi.unstubAllEnvs();

@@ -13,12 +13,6 @@ import type * as ai_index from "../ai/index.js";
 import type * as ai_mock from "../ai/mock.js";
 import type * as ai_openaiCompatible from "../ai/openaiCompatible.js";
 import type * as ai_types from "../ai/types.js";
-import type * as notes_actions from "../notes/actions.js";
-import type * as notes_limits from "../notes/limits.js";
-import type * as notes_mutations from "../notes/mutations.js";
-import type * as notes_queries from "../notes/queries.js";
-import type * as notes_seed from "../notes/seed.js";
-import type * as notes_tables from "../notes/tables.js";
 
 import type {
   ApiFromModules,
@@ -32,12 +26,6 @@ declare const fullApi: ApiFromModules<{
   "ai/mock": typeof ai_mock;
   "ai/openaiCompatible": typeof ai_openaiCompatible;
   "ai/types": typeof ai_types;
-  "notes/actions": typeof notes_actions;
-  "notes/limits": typeof notes_limits;
-  "notes/mutations": typeof notes_mutations;
-  "notes/queries": typeof notes_queries;
-  "notes/seed": typeof notes_seed;
-  "notes/tables": typeof notes_tables;
 }>;
 
 /**
