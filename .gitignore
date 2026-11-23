@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-e2e
+.env
+.env*.local
+coverage
+reports
+playwright-report
+test-results
+.convex
+.vercel
+*.tsbuildinfo

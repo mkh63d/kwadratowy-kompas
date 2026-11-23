@@ -1,0 +1,108 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  deploy:
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Check deploy credentials
+        id: creds
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          missing=""
+          for name in CONVEX_DEPLOY_KEY VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            {
+              echo "### Deploy skipped"
+              echo
+              echo "Missing secrets:$missing. Nothing was deployed. Add them to the \`production\` environment to enable deploys."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice title=Deploy skipped::Missing secrets:$missing"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.creds.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - if: steps.creds.outputs.ready == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - if: steps.creds.outputs.ready == 'true'
+        run: npm ci
+
+      - if: steps.creds.outputs.ready == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx vercel@65.16.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - if: steps.creds.outputs.ready == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          VITE_COMMIT_SHA: ${{ github.sha }}
+        run: >-
+          npx convex deploy
+          --cmd "npx vercel@65.16.0 build --prod --token=$VERCEL_TOKEN"
+          --cmd-url-env-var-name VITE_CONVEX_URL
+
+      - name: Verify build targets the production Convex deployment
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          # Deploy key format: <prod|dev>:<deployment-name>|<token>
+          deployment="${CONVEX_DEPLOY_KEY#*:}"
+          deployment="${deployment%%|*}"
+          host="${deployment}.convex.cloud"
+          if ! grep -rqF "$host" .vercel/output/static; then
+            echo "::error::$host not found in .vercel/output/static; the build did not use the production Convex URL"
+            exit 1
+          fi
+          echo "Found $host in build output"
+
+      - if: steps.creds.outputs.ready == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx vercel@65.16.0 deploy --prebuilt --prod --token="$VERCEL_TOKEN"

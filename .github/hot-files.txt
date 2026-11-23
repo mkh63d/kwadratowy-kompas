@@ -1,0 +1,35 @@
+# Hot files: shared contracts that go in their own small PR (specs/starter-architecture.md section 14).
+# One glob per line, relative to the repo root (path.matchesGlob syntax: `*` stays inside one
+# directory, `**` crosses them). Blank lines and lines starting with # are ignored.
+# convex/_generated/** is exempt (neither hot nor non-hot) and handled in scripts/lib/hot-files.mjs.
+
+convex/schema.ts
+convex/schema.test.ts
+convex/*/tables.ts
+convex/*/tables.test.ts
+convex/ai/**
+convex/lib/**
+src/app/**
+src/components/ui/**
+src/lib/**
+package.json
+package-lock.json
+.github/**
+scripts/hot-files-check.mjs
+scripts/lib/hot-files.mjs
+.claude/**
+CLAUDE.md
+
+# root config files
+*.config.*
+tsconfig*.json
+.env.example
+.env.e2e
+.gitattributes
+.gitignore
+.npmrc
+.nvmrc
+.prettierignore
+.prettierrc.json
+index.html
+vercel.json

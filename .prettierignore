@@ -1,0 +1,10 @@
+﻿package-lock.json
+convex/_generated
+dist
+dist-e2e
+coverage
+reports
+playwright-report
+test-results
+node_modules
+

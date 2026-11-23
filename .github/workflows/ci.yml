@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: ci-${{ github.event_name }}-${{ github.ref }}-verify
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Read Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Playwright Chromium
+        env:
+          CACHE_HIT: ${{ steps.pw-cache.outputs.cache-hit }}
+        # Cached browsers still need their OS packages, which live outside the cache.
+        run: |
+          if [ "$CACHE_HIT" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
+      - run: npm run verify
+      - name: Coverage summary
+        if: ${{ !cancelled() }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            if (!fs.existsSync("coverage/coverage-summary.json")) process.exit(0);
+            const t = JSON.parse(fs.readFileSync("coverage/coverage-summary.json", "utf8")).total;
+            const rows = ["lines", "statements", "functions", "branches"]
+              .map((k) => `| ${k} | ${t[k].pct}% | ${t[k].covered}/${t[k].total} |`);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              ["### Coverage", "", "| Metric | Covered | Count |", "|---|---|---|", ...rows, ""].join("\n"));
+          '
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: verify-reports
+          path: |
+            reports/
+            coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  hot-files:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    concurrency:
+      group: ci-${{ github.event_name }}-${{ github.ref }}-hot-files
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Use the base copy of the checker and the list
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # A PR must not be able to weaken its own check. Files absent at base (the PR that
+        # introduces the checker) keep the PR's copy.
+        run: |
+          git cat-file -e "$BASE_SHA^{commit}" || { echo "base commit $BASE_SHA is not reachable" >&2; exit 1; }
+          for f in scripts/hot-files-check.mjs scripts/lib/hot-files.mjs .github/hot-files.txt; do
+            if git cat-file -e "$BASE_SHA:$f" 2>/dev/null; then
+              git checkout "$BASE_SHA" -- "$f"
+            fi
+          done
+      - name: Check hot-file mix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/hot-files-check.mjs
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: ci-${{ github.event_name }}-${{ github.ref }}-secrets
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    env:
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (checksum-verified)
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" "$base/$archive"
+          curl -fsSL -o "$RUNNER_TEMP/checksums.txt" "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          (cd "$RUNNER_TEMP" && grep " $archive\$" checksums.txt | sha256sum --check --strict -)
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan full history
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --verbose .'
+
+  gate:
+    needs: [verify, secrets, hot-files]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    concurrency:
+      group: ci-${{ github.event_name }}-${{ github.ref }}-gate
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Require every needed job to succeed
+        env:
+          VERIFY: ${{ needs.verify.result }}
+          SECRETS: ${{ needs.secrets.result }}
+          HOT_FILES: ${{ needs.hot-files.result }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "verify=$VERIFY secrets=$SECRETS hot-files=$HOT_FILES event=$EVENT"
+          [ "$VERIFY" = "success" ] || { echo "verify did not succeed" >&2; exit 1; }
+          [ "$SECRETS" = "success" ] || { echo "secrets did not succeed" >&2; exit 1; }
+          if [ "$HOT_FILES" = "success" ]; then exit 0; fi
+          if [ "$HOT_FILES" = "skipped" ] && [ "$EVENT" != "pull_request" ]; then exit 0; fi
+          echo "hot-files did not succeed" >&2
+          exit 1
