@@ -169,4 +169,10 @@ Opisane tam: antywirus przechwytujący TLS, ścieżki i końce linii na Windowsi
 - [docs/troubleshooting.md](docs/troubleshooting.md): typowe błędy.
 - [CONTRIBUTING.md](CONTRIBUTING.md): zasady zespołu. [CLAUDE.md](CLAUDE.md): reguły dla agentów.
 
-Licencja: [MIT](LICENSE).
+## Licencja
+
+Kod projektu jest dostępny na licencji [GNU AGPL-3.0](LICENSE) w wersji 3 lub dowolnej późniejszej (`AGPL-3.0-or-later`).
+
+Projekt powstał z szablonu [Orfeliny/Hackathon-template](https://github.com/Orfeliny/Hackathon-template). Kod pochodzący z szablonu pozostaje objęty także jego oryginalną licencją MIT; jej pełna treść z informacją o prawach autorskich jest w pliku [LICENSE-MIT](LICENSE-MIT).
+
+Licencja nie obejmuje znaków towarowych ani logotypów partnerów. Ich użycie wymaga zgody właścicieli.
