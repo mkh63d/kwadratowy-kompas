@@ -160,7 +160,7 @@ Opisane tam: antywirus przechwytujący TLS, ścieżki i końce linii na Windowsi
 
 ## Plan rozwoju
 
-Funkcje powstają etapami, każda najpierw jako krótka specyfikacja. Plan i specyfikacje są w katalogu [specs/](specs/). Opis funkcji trafia do tego README dopiero wtedy, gdy funkcja działa.
+Funkcje powstają etapami, każda najpierw jako krótka specyfikacja. Plan i specyfikacje są w katalogu [specs/](specs/), a plan przebudowy z raportami badawczymi w [specs/plan-przebudowy.md](specs/plan-przebudowy.md). Opis funkcji trafia do tego README dopiero wtedy, gdy funkcja działa.
 
 ## Licencja
 
