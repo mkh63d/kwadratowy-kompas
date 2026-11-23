@@ -1,10 +1,10 @@
 # Codzienny przepływ pracy
 
-Jak pracować w 24 godziny w pięć osób, z kilkoma równoległymi ścieżkami (lanes) na osobę. Zasady
+Jak pracować w zespole, z kilkoma równoległymi ścieżkami (lanes) na osobę. Zasady
 zespołu (gałęzie, commity, recenzje) są w [CONTRIBUTING.md](../CONTRIBUTING.md), a budowa kodu w
 [architecture.md](architecture.md). Tu jest rytm pracy i narzędzia, które zapobiegają kolizjom.
 
-## Tryb „light hackathon”
+## Przepływ pracy nad funkcją
 
 Bez ceremonii, ale z jedną kartką specyfikacji na funkcję:
 
@@ -14,8 +14,6 @@ Bez ceremonii, ale z jedną kartką specyfikacji na funkcję:
 3. Zaimplementuj ją w `src/features/<nazwa>/` i `convex/<nazwa>/`.
 4. Osobny recenzent (agent albo człowiek) sprawdza diff względem kryteriów akceptacji.
 5. `npm run verify`, potem PR z `Closes #<nr>`.
-
-Pierwszego dnia, przed pierwszą linijką kodu, przejdź przez [SETUP_PROMPT.md](../SETUP_PROMPT.md).
 
 ## Start środowiska
 
@@ -79,7 +77,7 @@ Szczegóły działania:
 
 Plan darmowy Convex dopuszcza do 6 developerów i 40 deploymentów na zespół
 ([cennik](https://www.convex.dev/pricing), [limity](https://docs.convex.dev/production/state/limits)).
-Każda ścieżka z deploymentem w chmurze to jeden z nich. Szacunkowo: pięć osób, produkcja i
+Każda ścieżka z deploymentem w chmurze to jeden z nich. Przykładowo: pięć osób, produkcja i
 około 25 ścieżek to ok. 31 deploymentów. Mieści się to w 40 tylko wtedy, gdy skończone ścieżki
 znikają albo wygasają. Stąd domyślne 7 dni.
 Opis wielu deploymentów: [Convex, multiple deployments](https://docs.convex.dev/production/multiple-deployments).
@@ -96,7 +94,7 @@ Deployment lokalny (beta) nie zużywa limitu, działa na Twojej maszynie i nie w
 
 ## Unikanie kolizji
 
-Bez zabezpieczeń pięć osób z kilkoma ścieżkami będzie zmieniać te same pliki.
+Bez zabezpieczeń kilka osób z kilkoma ścieżkami będzie zmieniać te same pliki.
 
 ### 1. Funkcje dodają pliki
 

@@ -65,7 +65,7 @@ gh pr view --comments                             # uwagi recenzentów
 ## Nazwy gałęzi
 
 `feat|fix|chore/<nr>-<slug>`, gdzie `<nr>` to numer issue, a `<slug>` to krótki opis małymi
-literami z myślnikami: `feat/12-login`, `fix/31-notes-empty-state`. Gałęzie lane (`lane:new`) są
+literami z myślnikami: `feat/12-login`, `fix/31-search-empty-state`. Gałęzie lane (`lane:new`) są
 zawsze `feat/<nr>-<slug>`. PR dla pliku wspólnego dostaje gałąź `chore/<nr>-contract-<slug>` i tytuł
 `feat(contract): …`.
 
@@ -80,13 +80,13 @@ Tytuł: feat: lista zadań z odhaczaniem
 
 ## Problem i motywacja
 
-Zespół chce na demo pokazać prostą listę rzeczy do zrobienia, którą da się odhaczać. Dziś w
-aplikacji są tylko notatki.
+Zespół chce prostą listę rzeczy do zrobienia, którą da się odhaczać. Dziś aplikacja nie ma
+takiej listy.
 
 ## Proponowane rozwiązanie
 
 Nowa strona „Zadania”: pole do dodania zadania, lista zadań i przełącznik „zrobione” przy każdym.
-Dane trzyma nowa tabela Convex, a treść zadania przechodzi walidację Zod, tak jak w notatkach.
+Dane trzyma nowa tabela Convex, a treść zadania przechodzi walidację Zod, jak każde wejście na granicy.
 
 ## Kryteria akceptacji
 

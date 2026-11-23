@@ -79,10 +79,10 @@ Podział na dwa PR-y wynika z pliku wspólnego `convex/schema.ts`: kontrakt dany
 
    ```tsx
    export default {
-     path: "/notes",
-     navLabel: "Notatki",
+     path: "/<nazwa>",
+     navLabel: "<Etykieta w menu>",
      order: 10,
-     element: <NotesPage />,
+     element: <FeaturePage />,
    };
    ```
 

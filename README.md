@@ -1,10 +1,10 @@
 # HackNation Starter
 
-Starter na 24-godzinny hackathon: Vite + React + TypeScript + Tailwind po stronie frontendu, Convex jako backend i jedna przykładowa funkcja („notatki” z akcją AI do streszczania). Zespół ok. 5 osób pracuje na równoległych ścieżkach (git worktree), a na koniec pokazuje jedno demo.
+Kwadratowy Kompas zbiera okazje z Łodzi w jednym miejscu. Frontend to Vite + React + TypeScript + Tailwind wdrażany na Vercel, backend to Convex. AI wyciąga okazje ze źródeł, a człowiek moderuje je przed publikacją. Zespół pracuje na równoległych ścieżkach (git worktree).
 
 ## Spis treści
 
-- [Nowy hackathon z szablonu](#nowy-hackathon-z-szablonu)
+- [Nowy projekt z szablonu](#nowy-projekt-z-szablonu)
 - [Wymagania](#wymagania)
 - [Szybki start (tryb offline)](#szybki-start-tryb-offline)
 - [Szybki start z Convex](#szybki-start-z-convex)
@@ -19,9 +19,9 @@ Starter na 24-godzinny hackathon: Vite + React + TypeScript + Tailwind po stroni
 - [Problemy](#problemy)
 - [Dokumentacja](#dokumentacja)
 
-## Nowy hackathon z szablonu
+## Nowy projekt z szablonu
 
-To repozytorium jest szablonem GitHuba. Na każdy hackathon zakładasz własną kopię:
+To repozytorium jest szablonem GitHuba. Na każdy projekt zakładasz własną kopię:
 
 1. Na stronie repozytorium kliknij **Use this template**, utwórz nowe repozytorium i sklonuj je.
 2. `npm ci`, potem `npm run dev:frontend`. Całość działa lokalnie z mockiem AI, bez żadnego konta.
@@ -53,7 +53,7 @@ Otwórz [http://localhost:5173](http://localhost:5173). Gdy port jest zajęty, V
 
 ## Szybki start z Convex
 
-Przykładowe notatki zapisują się w bazie Convex, więc pełne demo potrzebuje backendu. Są dwie drogi.
+Dane aplikacji trzyma Convex, więc pełne działanie wymaga backendu. Są dwie drogi.
 
 **A. Lokalny backend bez konta** (najszybciej, nic nie opuszcza maszyny):
 
@@ -110,7 +110,7 @@ Zasada: funkcje dodają pliki, nie edytują wspólnych. Nową funkcję dodaje si
 
 ## Dostawcy AI
 
-Domyślnie działa `mock`, który jest też siatką bezpieczeństwa na demo. Prawdziwy model (dowolny endpoint zgodny z OpenAI) włącza się przez `AI_PROVIDER=openai-compatible` oraz `AI_BASE_URL`, `AI_MODEL` i `AI_API_KEY` w środowisku Convex. Klucze nigdy nie trafiają do `VITE_*` ani do `.env.local`. Między prawdziwymi dostawcami nie ma automatycznego przełączania.
+Domyślnie działa `mock`, który jest też siatką bezpieczeństwa, gdy prawdziwy model zawiedzie. Prawdziwy model (dowolny endpoint zgodny z OpenAI) włącza się przez `AI_PROVIDER=openai-compatible` oraz `AI_BASE_URL`, `AI_MODEL` i `AI_API_KEY` w środowisku Convex. Klucze nigdy nie trafiają do `VITE_*` ani do `.env.local`. Między prawdziwymi dostawcami nie ma automatycznego przełączania.
 
 **Bielik i PLLuM.** Modele polskie podłączamy przez ten sam adapter zgodny z OpenAI. Chmura Convex nie dosięgnie prywatnego adresu WireGuard, więc są trzy drogi: (1) uwierzytelniona brama HTTPS przed modelem, (2) osobny worker w sieci modelu, który tylko wychodzi do Convex, (3) bezpośredni, osiągalny endpoint. Zaimplementowana jest droga 3, drogi 1 i 2 są opisane w dokumentacji. Nigdy nie otwieraj portu modelu do internetu. Licencje PLLuM różnią się między modelami, więc sprawdź kartę modelu. Szczegóły, tryby strukturalne i bezpieczeństwo: [docs/ai-providers.md](docs/ai-providers.md).
 
@@ -136,13 +136,13 @@ Zadania pochodzą z GitHub Issues. Gałąź nazywa się `feat|fix|chore/<nr>-<sl
 
 ## Praca z agentami AI
 
-Reguły dla agentów (i ludzi) są w [CLAUDE.md](CLAUDE.md). Pierwszego dnia wklej agentowi w katalogu repozytorium [SETUP_PROMPT.md](SETUP_PROMPT.md): przeprowadzi go przez przegląd repo, krótką specyfikację i plan z linią odcięcia. Zadania pochodzą z GitHub Issues, a agent nie zakłada ani nie zamyka issue bez pytania. Przebieg: [docs/github-issues-workflow.md](docs/github-issues-workflow.md). Osobny agent-recenzent sprawdza zmianę względem kryteriów akceptacji, a recenzję GitHub Copilot zamawiamy raz na PR, jako ostatni przegląd.
+Reguły dla agentów (i ludzi) są w [CLAUDE.md](CLAUDE.md). Zadania pochodzą z GitHub Issues, a agent nie zakłada ani nie zamyka issue bez pytania. Przebieg: [docs/github-issues-workflow.md](docs/github-issues-workflow.md). Osobny agent-recenzent sprawdza zmianę względem kryteriów akceptacji, a recenzję GitHub Copilot zamawiamy raz na PR, jako ostatni przegląd.
 
 ## Deploy
 
 Backend wdraża Convex, frontend Vercel, a oba kroki uruchamia workflow `.github/workflows/deploy.yml`. W `vercel.json` automatyczne wdrożenia z Gita są wyłączone, więc wdraża tylko workflow.
 
-Domyślna droga to `npm run setup:deploy` (opis w sekcji [Nowy hackathon z szablonu](#nowy-hackathon-z-szablonu)). Ręcznie:
+Domyślna droga to `npm run setup:deploy` (opis w sekcji [Nowy projekt z szablonu](#nowy-projekt-z-szablonu)). Ręcznie:
 
 1. Zaimportuj repozytorium jako projekt w Vercel i wykonaj `vercel link`.
 2. Dodaj sekrety w środowisku `production` na GitHubie: `CONVEX_DEPLOY_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`. Bez nich workflow niczego nie wdroży i napisze, których brakuje.

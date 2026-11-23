@@ -21,7 +21,7 @@ title: "fix: "
 
 ## Planowany zakres plików
 
-<!-- Pliki lub katalogi, które zamierzasz zmienić, np. src/features/notes/. Potrzebne do `npm run overlap`. -->
+<!-- Pliki lub katalogi, które zamierzasz zmienić, np. src/features/<nazwa>/. Potrzebne do `npm run overlap`. -->
 
 ## Środowisko
 

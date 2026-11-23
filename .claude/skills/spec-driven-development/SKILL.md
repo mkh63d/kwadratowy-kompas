@@ -10,7 +10,7 @@ Write the spec first, then build exactly what it says. The spec lives in `specs/
 ## The 10 steps
 
 1. **Understand the request.** Restate it in two sentences. Read the linked issue (`gh issue view <n> --comments`).
-2. **Inspect the existing architecture.** Read `CLAUDE.md`, `specs/starter-architecture.md` and the closest existing feature (`src/features/notes`, `convex/notes`). Run `npm run overlap`.
+2. **Inspect the existing architecture.** Read `CLAUDE.md`, `specs/starter-architecture.md` and the closest existing feature in `src/features/` and `convex/`, if there is one. Run `npm run overlap`.
 3. **Identify missing information.** List unknowns. Ask the human at most 3 questions, batched in one message; for the rest write down an assumption and continue.
 4. **Create or update the specification** in `specs/<feature>.md` (template below).
 5. **Define acceptance criteria** as `- [ ]` items, each checkable by a test or a command.
