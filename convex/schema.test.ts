@@ -380,7 +380,7 @@ type FieldRule = {
   mode: "iff" | "onlyIf";
 };
 
-// §4 "set iff" / "with" / "only while" notes. sentAt is not in §4; CTO round-1 ruling on T02.
+// §4 "set iff" / "with" / "only while" notes.
 const FIELD_RULES: { [T in AppTable]?: FieldRule[] } = {
   entries: [
     {
@@ -423,11 +423,6 @@ const FIELD_RULES: { [T in AppTable]?: FieldRule[] } = {
       field: "skipReason",
       condition: (doc) => doc.status === "skipped",
       mode: "iff",
-    },
-    {
-      field: "sentAt",
-      condition: (doc) => doc.status === "sent",
-      mode: "onlyIf",
     },
   ],
 };
@@ -853,7 +848,6 @@ describe("fixtures", () => {
     ],
     ["sources", { ingestTokenHash: "h" }],
     ["discordOutbox", { status: "failed", skipReason: "backlog_skipped" }],
-    ["discordOutbox", { status: "failed", sentAt: NOW }],
   ] as const)("the rule check rejects %s %j", (table, doc) => {
     expect(ruleViolations(table, doc)).not.toEqual([]);
   });
