@@ -77,13 +77,13 @@ Pliki mają być w UTF-8 bez BOM. Polecenia PowerShella `Set-Content` i `Out-Fil
 
 ## Baner „Tryb offline”: Convex nie jest skonfigurowany
 
-**Objaw:** na górze strony widać „Tryb offline: backend Convex nie jest skonfigurowany”, a zapis notatek i podsumowanie są wyłączone.
+**Objaw:** na górze strony widać „Tryb offline: backend Convex nie jest skonfigurowany”, a funkcje, które potrzebują backendu, nie działają.
 
 **Przyczyna:** aplikacja nie ma `VITE_CONVEX_URL`, więc nie tworzy klienta Convex. To zamierzony tryb startowy, nie błąd: dzięki niemu starter działa bez konta, a smoke e2e nie potrzebuje sieci.
 
 **Co zrobić:**
 
-- Lokalnie: `npm run dev` (uruchamia `convex dev`, który zapisuje `CONVEX_DEPLOYMENT` i `VITE_CONVEX_URL` w `.env.local`). Bez konta: `CONVEX_AGENT_MODE=anonymous npx convex dev --once` albo ustawienie tej zmiennej przed `npm run dev`.
+- Lokalnie: `npm run dev` (uruchamia `convex dev`, który zapisuje `CONVEX_DEPLOYMENT` i `VITE_CONVEX_URL` w `.env.local`). Bez konta: dopisz do `.env.local` linię `CONVEX_AGENT_MODE=anonymous` i uruchom `npx convex dev --once` (przepis w [README](../README.md#lokalny-backend-convex)). Zostaw tę linię w pliku: zmienna ustawiona tylko w powłoce znika, a wtedy `npm run dev` z zalogowanym CLI proponuje podlinkowanie deploymentu do chmury z domyślną odpowiedzią „tak”.
 - Po wdrożeniu: baner na produkcji znaczy, że build powstał bez adresu Convex. Zajrzyj do [deployment.md](deployment.md) (strażnik w `deploy.yml` i zakaz ustawiania `VITE_CONVEX_URL` w Vercelu).
 - Sprawdź, że `.env.local` nie ma pustego `VITE_CONVEX_URL=` po ręcznej edycji. Pusta wartość oznacza „offline”.
 
@@ -93,7 +93,7 @@ Pliki mają być w UTF-8 bez BOM. Polecenia PowerShella `Set-Content` i `Out-Fil
 
 **Przyczyna:** generowanie kodu Convex łączy się z deploymentem (typy zależą od schematu). Bez `CONVEX_DEPLOYMENT` w `.env.local` nie ma do czego się połączyć.
 
-**Co zrobić:** skonfiguruj deployment (`npx convex dev --once`, lokalnie bez konta: `CONVEX_AGENT_MODE=anonymous npx convex dev --once`), potem `npx convex codegen` i `npm run codegen:check`. Wygenerowane pliki są w repozytorium, więc commituj je razem ze zmianą w `convex/`. Zmiany w `convex/` nie idą równolegle z innymi zmianami w tym katalogu (patrz [development-workflow.md](development-workflow.md)).
+**Co zrobić:** skonfiguruj deployment (`npx convex dev --once`; lokalnie bez konta najpierw dopisz do `.env.local` linię `CONVEX_AGENT_MODE=anonymous`, patrz [README](../README.md#lokalny-backend-convex)), potem `npx convex codegen` i `npm run codegen:check`. Wygenerowane pliki są w repozytorium, więc commituj je razem ze zmianą w `convex/`. Zmiany w `convex/` nie idą równolegle z innymi zmianami w tym katalogu (patrz [development-workflow.md](development-workflow.md)).
 
 ## `lane:new --local`: „Cannot create a deployment in anonymous mode”
 

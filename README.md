@@ -56,14 +56,19 @@ Otwórz [http://localhost:5173](http://localhost:5173). Gdy port jest zajęty, V
 
 ## Lokalny backend Convex
 
-Lokalny backend nie wymaga konta i nic nie opuszcza maszyny:
+Lokalny backend nie wymaga konta, a baza i funkcje działają na Twojej maszynie, nie w chmurze Convex:
 
 ```bash
-# PowerShell: $env:CONVEX_AGENT_MODE = "anonymous"
-CONVEX_AGENT_MODE=anonymous npx convex dev --once
+# PowerShell: Add-Content .env.local 'CONVEX_AGENT_MODE=anonymous'
+echo 'CONVEX_AGENT_MODE=anonymous' >> .env.local
+npx convex dev --once
 ```
 
-Komenda tworzy lokalny deployment i zapisuje `CONVEX_DEPLOYMENT` oraz `VITE_CONVEX_URL` w `.env.local`. Potem `npm run dev` uruchamia Convex i Vite razem. Plik `.env.local` jest poza gitem. Nie wpisuj w niego sekretów pod prefiksem `VITE_`, bo trafiają do paczki w przeglądarce.
+Pierwsza linia dopisuje tryb anonimowy do `.env.local` (plik powstanie, jeśli go nie ma). Druga tworzy lokalny deployment i zapisuje w tym samym pliku `CONVEX_DEPLOYMENT` oraz `VITE_CONVEX_URL`. Potem `npm run dev` uruchamia Convex i Vite razem.
+
+Linia `CONVEX_AGENT_MODE=anonymous` musi zostać w `.env.local`, bo CLI czyta ją przy każdym uruchomieniu. Bez niej `npm run dev` z zalogowanym CLI (`npx convex login`) pyta, czy podlinkować deployment do konta, a domyślna odpowiedź (Enter) to „tak”: CLI tworzy wtedy deployment w chmurze i przepisuje na niego `.env.local`. Ustawienie zmiennej tylko w powłoce nie wystarcza, bo znika razem z nią. Usuń tę linię dopiero wtedy, gdy świadomie przechodzisz do chmury. Zmienne `CONVEX_*` wyeksportowane w powłoce mają pierwszeństwo przed `.env.local`, więc nie eksportuj ich w terminalu, w którym pracujesz z lokalnym backendem.
+
+Plik `.env.local` jest poza gitem. Nie wpisuj w niego sekretów pod prefiksem `VITE_`, bo trafiają do paczki w przeglądarce.
 
 Konto Convex (`npx convex login`, potem `npm run dev`) i współdzielony deployment w chmurze są potrzebne tylko ścieżkom z `npm run lane:new` bez `--local`.
 

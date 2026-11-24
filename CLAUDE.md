@@ -17,9 +17,10 @@ and the README. This file does not repeat them, it says what you must do and nev
 
 ## Overview
 
-Kwadratowy Kompas aggregates opportunities in Łódź: Convex backend, Vite + React + TypeScript +
-Tailwind frontend deployed on Vercel. AI extracts opportunities from sources, and a human moderator
-approves them before they are published. Work often runs in several parallel lanes (git worktrees).
+Kwadratowy Kompas will aggregate opportunities in Łódź: Convex backend, Vite + React + TypeScript +
+Tailwind frontend, with Vercel as the planned host. Target, not built yet: AI extracts opportunities
+from sources and a human moderator approves them before publication. Work often runs in several
+parallel lanes (git worktrees).
 
 ## Language
 
@@ -74,7 +75,7 @@ say so instead of claiming it passed.
 
 ## Convex
 
-- Local backend without an account: `CONVEX_AGENT_MODE=anonymous npx convex dev --once`.
+- Local backend without an account: add `CONVEX_AGENT_MODE=anonymous` to `.env.local`, then `npx convex dev --once`. Keep the line: without it a logged-in CLI offers to link the deployment to the cloud (default yes).
   Cloud lanes (`npm run lane:new`) need a logged-in Convex CLI; `--local` lanes do not.
 - After adding or removing a file under `convex/`, regenerate (`npx convex codegen` with a
   configured deployment) and run `npm run codegen:check`. `convex/_generated/` is committed.

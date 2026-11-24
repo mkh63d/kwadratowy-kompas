@@ -29,12 +29,17 @@ npm run dev                       # Convex + Vite, gdy Convex jest skonfigurowan
 Backend Convex bez konta (lokalny, anonimowy):
 
 ```bash
-CONVEX_AGENT_MODE=anonymous npx convex dev --once
+echo 'CONVEX_AGENT_MODE=anonymous' >> .env.local
+npx convex dev --once
 ```
 
-W PowerShellu: `$env:CONVEX_AGENT_MODE='anonymous'; npx convex dev --once`. Pierwsze uruchomienie
-`npx convex dev` z kontem zapisuje `VITE_CONVEX_URL` do `.env.local`. Brak tej zmiennej to tryb
-offline: aplikacja działa, a na górze widać baner.
+W PowerShellu pierwsza linia to `Add-Content .env.local 'CONVEX_AGENT_MODE=anonymous'`. Linia w
+`.env.local` zostaje na stałe: CLI czyta ją przy każdym `npx convex dev`, więc `npm run dev` z
+zalogowanym CLI nie proponuje podlinkowania deploymentu do chmury (domyślna odpowiedź na to pytanie
+to „tak”). Sama zmienna w powłoce znika razem z nią. Szczegóły:
+[README](../README.md#lokalny-backend-convex). Pierwsze uruchomienie `npx convex dev`, z kontem
+albo bez, zapisuje `VITE_CONVEX_URL` do `.env.local`. Brak tej zmiennej to tryb offline: aplikacja
+działa, a na górze widać baner.
 
 ## Ścieżki (lanes)
 
