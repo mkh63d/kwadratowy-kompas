@@ -65,6 +65,11 @@ Szczegóły działania:
 - Porty są liczone **na maszynę**: zderzają się tylko procesy na tym samym komputerze. Dwie osoby
   mogą obie mieć ścieżkę 1 na swoich laptopach. Vite ma `strictPort`, więc zajęty port kończy się
   jawnym błędem, a nie cichą zmianą portu.
+- **Twórz ścieżki po jednej.** Skrypt rezerwuje porty ścieżki dopiero wtedy, gdy zapisze je w jej
+  `.env.local`. Dwa `lane:new` uruchomione naraz mogą więc wybrać ten sam numer ścieżki. Ścieżka
+  lokalna, która przegra, kończy się po `npm ci` błędem `Requested port … is not available`; usuń
+  ją (`lane:rm --force`, `git branch -D`) i utwórz jeszcze raz. Uruchom kolejne `lane:new`, gdy
+  poprzednie się skończy. `npm run dev` w wielu ścieżkach naraz jest w porządku.
 - `lane:list` pokazuje worktree na gałęziach `feat/*` razem z portami i deploymentem. Kolumna
   `CONVEX PORTS` to porty lokalnego backendu Convex (`API/site`, odczytane z `VITE_CONVEX_URL` i
   `VITE_CONVEX_SITE_URL`); ścieżki w chmurze mają tam `-`.
@@ -99,13 +104,16 @@ Z `--local` skrypt uruchamia w nowym worktree
 `npx convex dev --once --local-cloud-port <API> --local-site-port <site>` bez terminala na
 wejściu (stdin nie jest TTY). Komenda tworzy deployment anonimowy, wgrywa funkcje z `convex/` i
 zapisuje w `.env.local` `CONVEX_DEPLOYMENT=anonymous:anonymous-<katalog worktree>` (np.
-`anonymous:anonymous-kwadratowy-kompas-12-login`), `VITE_CONVEX_URL` i `VITE_CONVEX_SITE_URL`. Skrypt
-dopisuje `PORT`, `PREVIEW_PORT` i `CONVEX_AGENT_MODE=anonymous`.
+`anonymous:anonymous-kwadratowy-kompas-12-login`), `VITE_CONVEX_URL` i `VITE_CONVEX_SITE_URL`.
+`PORT`, `PREVIEW_PORT` i `CONVEX_AGENT_MODE=anonymous` skrypt zapisuje wcześniej, zaraz po
+utworzeniu worktree, jeszcze przed `npm ci`. Dzięki temu `lane:rm` ścieżki, której tworzenie się
+nie udało, wie, że była lokalna.
 
 Każda ścieżka lokalna ma więc własny backend: własną nazwę deploymentu i własne porty. Ścieżka N
 dostaje porty `3210 + 2N` (API) i `3211 + 2N` (HTTP actions): ścieżka 1 to `3212`/`3213`,
 ścieżka 2 to `3214`/`3215`. Główny checkout zostaje na domyślnych `3210`/`3211`. Skrypt wybiera
-je tak jak `PORT` i `PREVIEW_PORT`: pomija porty zajęte na maszynie i porty innych ścieżek. CLI
+je tak jak `PORT` i `PREVIEW_PORT`: pomija porty innych ścieżek (z ich `.env.local`) oraz porty,
+na których coś na tej maszynie przyjmuje połączenia przez `127.0.0.1` albo `::1`. CLI
 zapisuje porty w `<ścieżka>/.convex/local/default/config.json` i przy każdym następnym
 `npm run dev` próbuje najpierw ich, więc ścieżka zostaje na swoich portach. Dzięki temu kilka
 ścieżek może mieć jednocześnie uruchomione `npm run dev`. Jeśli zapisany port jest zajęty, CLI nie

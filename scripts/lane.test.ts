@@ -1,4 +1,6 @@
+import type { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer, type AddressInfo, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +15,7 @@ import {
   localBackendPort,
   parseArgs,
   parseWorktrees,
+  isPortInUse,
   pickLane,
   realDeps,
   toLanes,
@@ -213,6 +216,7 @@ describe("lanes", () => {
         deployment: "dev:happy-fox-123 # team: t, project: p",
         convexPort: null,
         convexSitePort: null,
+        anonymousMode: false,
       },
     ]);
   });
@@ -483,6 +487,31 @@ describe("laneNew", () => {
     await expect(laneNew(deps, args)).rejects.toThrow(/npm ci/);
     expect(written).toEqual([]);
   });
+
+  it("writes a --local lane's env right after the worktree, before npm ci", async () => {
+    const order: string[] = [];
+    const { deps } = makeDeps({
+      run: (command: string) => {
+        order.push(command);
+        return command === "npm" ? 1 : 0;
+      },
+      writeEnv: (_dir: string, values: Record<string, string | number>) => {
+        order.push(JSON.stringify(values));
+      },
+    });
+    await expect(laneNew(deps, { ...args, local: true })).rejects.toThrow(
+      /npm ci/,
+    );
+    expect(order).toEqual([
+      "git",
+      JSON.stringify({
+        PORT: 5175,
+        PREVIEW_PORT: 4175,
+        CONVEX_AGENT_MODE: "anonymous",
+      }),
+      "npm",
+    ]);
+  });
 });
 
 describe("laneRm", () => {
@@ -501,10 +530,14 @@ describe("laneRm", () => {
     expect(logs.join("\n")).toMatch(/Convex dashboard/);
   });
 
-  it("does not claim a local lane's deployment survives", () => {
-    const { deps, logs } = makeDeps({
-      readEnv: () => ({ CONVEX_DEPLOYMENT: "anonymous:anonymous-agent" }),
-    });
+  it.each([
+    ["a local lane", { CONVEX_DEPLOYMENT: "anonymous:anonymous-agent" }],
+    [
+      "a --local lane whose creation failed",
+      { PORT: "5175", PREVIEW_PORT: "4175", CONVEX_AGENT_MODE: "anonymous" },
+    ],
+  ])("does not claim the deployment of %s survives", (_label, env) => {
+    const { deps, logs } = makeDeps({ readEnv: () => env });
     laneRm(deps, { command: "rm", slug: "12-login", force: false });
     const log = logs.join("\n");
     expect(log).toMatch(/removed with the worktree/);
@@ -551,17 +584,61 @@ describe("realDeps().run", () => {
     }
   });
 
-  it("gives the child an empty, non-TTY stdin when asked to ignore it", () => {
-    const { run } = realDeps();
-    const exitUnlessNoInput = [
-      "-e",
-      "process.exit(!process.stdin.isTTY && require('fs').readFileSync(0, 'utf8') === '' ? 0 : 7)",
-    ];
-    expect(
-      run(process.execPath, exitUnlessNoInput, {
-        cwd: process.cwd(),
-        stdin: "ignore",
-      }),
-    ).toBe(0);
+  it("hands stdin: ignore to the spawn as the child's stdin, and inherits it otherwise", () => {
+    const stdio: unknown[] = [];
+    const spawn = ((
+      _command: string,
+      _args: string[],
+      options: { stdio: unknown },
+    ) => {
+      stdio.push(options.stdio);
+      return { status: 0 };
+    }) as unknown as typeof spawnSync;
+    const { run } = realDeps({ spawn });
+    const cwd = process.cwd();
+    run(process.execPath, [], { cwd, stdin: "ignore" });
+    run(process.execPath, [], { cwd });
+    expect(stdio).toEqual([
+      ["ignore", "inherit", "inherit"],
+      ["inherit", "inherit", "inherit"],
+    ]);
+  });
+});
+
+describe("isPortInUse", () => {
+  async function listenOn(host: string) {
+    const server = createServer();
+    await new Promise<void>((ok, fail) => {
+      server.once("error", fail);
+      server.listen({ port: 0, host }, ok);
+    });
+    return server;
+  }
+  const portOf = (server: Server) => (server.address() as AddressInfo).port;
+  const close = (server: Server) =>
+    new Promise<void>((done) => server.close(() => done()));
+
+  it.each(["127.0.0.1", "0.0.0.0", "::1", "::"])(
+    "sees a listener bound to %s",
+    async (host) => {
+      let server: Server;
+      try {
+        server = await listenOn(host);
+      } catch {
+        return; // no IPv6 on this machine
+      }
+      try {
+        await expect(isPortInUse(portOf(server))).resolves.toBe(true);
+      } finally {
+        await close(server);
+      }
+    },
+  );
+
+  it("reports a closed port as free", async () => {
+    const server = await listenOn("127.0.0.1");
+    const port = portOf(server);
+    await close(server);
+    await expect(isPortInUse(port)).resolves.toBe(false);
   });
 });
