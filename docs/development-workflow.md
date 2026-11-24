@@ -29,12 +29,13 @@ npm run dev                       # Convex + Vite, gdy Convex jest skonfigurowan
 Backend Convex bez konta (lokalny, anonimowy):
 
 ```bash
-echo 'CONVEX_AGENT_MODE=anonymous' >> .env.local
+node -e "require('fs').appendFileSync('.env.local', '\nCONVEX_AGENT_MODE=anonymous\n')"
 npx convex dev --once
 ```
 
-W PowerShellu pierwsza linia to `Add-Content .env.local 'CONVEX_AGENT_MODE=anonymous'`. Linia w
-`.env.local` zostaje na stałe: CLI czyta ją przy każdym `npx convex dev`, więc `npm run dev` z
+Obie komendy działają tak samo w Bashu i w PowerShellu (`echo … >> .env.local` w Windows
+PowerShell 5.1 zapisałby plik w UTF-16, którego CLI nie odczyta). Linia w `.env.local` zostaje na
+stałe: CLI czyta ją przy każdym `npx convex dev`, więc `npm run dev` z
 zalogowanym CLI nie proponuje podlinkowania deploymentu do chmury (domyślna odpowiedź na to pytanie
 to „tak”). Sama zmienna w powłoce znika razem z nią. Szczegóły:
 [README](../README.md#lokalny-backend-convex). Pierwsze uruchomienie `npx convex dev`, z kontem
@@ -246,8 +247,9 @@ git add convex/_generated
 ```
 
 **`npm run codegen:check`** uruchamia `convex codegen` i kończy się błędem, gdy `convex/_generated`
-różni się od zacommitowanego. Wymaga skonfigurowanego deploymentu (wystarczy
-`npx convex dev --once`), więc to kontrola lokalna i w ścieżkach, a nie w CI. Po dodaniu albo
+różni się od zacommitowanego. Wymaga skonfigurowanego deploymentu (z kontem
+wystarczy `npx convex dev --once`, bez konta przepis z
+[README](../README.md#lokalny-backend-convex) z linią `CONVEX_AGENT_MODE=anonymous` w `.env.local`), więc to kontrola lokalna i w ścieżkach, a nie w CI. Po dodaniu albo
 usunięciu pliku w `convex/` zawsze regeneruj kod i commituj go razem ze zmianą. Zmiany w `convex/`
 nie idą równolegle z innymi zmianami plików w `convex/`.
 

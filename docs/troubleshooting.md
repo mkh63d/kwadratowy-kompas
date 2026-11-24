@@ -83,7 +83,7 @@ Pliki mają być w UTF-8 bez BOM. Polecenia PowerShella `Set-Content` i `Out-Fil
 
 **Co zrobić:**
 
-- Lokalnie: `npm run dev` (uruchamia `convex dev`, który zapisuje `CONVEX_DEPLOYMENT` i `VITE_CONVEX_URL` w `.env.local`). Bez konta: dopisz do `.env.local` linię `CONVEX_AGENT_MODE=anonymous` i uruchom `npx convex dev --once` (przepis w [README](../README.md#lokalny-backend-convex)). Zostaw tę linię w pliku: zmienna ustawiona tylko w powłoce znika, a wtedy `npm run dev` z zalogowanym CLI proponuje podlinkowanie deploymentu do chmury z domyślną odpowiedzią „tak”.
+- Lokalnie z kontem Convex (`npx convex login`): `npm run dev` (uruchamia `convex dev`, który zapisuje `CONVEX_DEPLOYMENT` i `VITE_CONVEX_URL` w `.env.local`). Bez konta: dopisz do `.env.local` linię `CONVEX_AGENT_MODE=anonymous` i uruchom `npx convex dev --once` (przepis w [README](../README.md#lokalny-backend-convex)). Zostaw tę linię w pliku: zmienna ustawiona tylko w powłoce znika, a wtedy `npm run dev` z zalogowanym CLI proponuje podlinkowanie deploymentu do chmury z domyślną odpowiedzią „tak”.
 - Po wdrożeniu: baner na produkcji znaczy, że build powstał bez adresu Convex. Zajrzyj do [deployment.md](deployment.md) (strażnik w `deploy.yml` i zakaz ustawiania `VITE_CONVEX_URL` w Vercelu).
 - Sprawdź, że `.env.local` nie ma pustego `VITE_CONVEX_URL=` po ręcznej edycji. Pusta wartość oznacza „offline”.
 

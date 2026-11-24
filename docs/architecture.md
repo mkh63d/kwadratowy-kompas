@@ -45,7 +45,7 @@ Jest generowany przez Convex i **commitowany**, żeby świeży klon przechodził
 
 - Nie edytuj go ręcznie.
 - Dodanie, zmiana nazwy lub usunięcie pliku w `convex/` wymaga regeneracji w tym samym commicie: `npx convex codegen`.
-- `npm run codegen:check` uruchamia `npx convex codegen` i zawodzi, gdy wynik różni się od zacommitowanych plików. Skrypt wymaga skonfigurowanego wdrożenia Convex (wgrywa funkcje na deployment dev), więc działa lokalnie i w lane'ach, nie w CI. Jeśli nie masz wdrożenia: `npx convex dev --once` (patrz [README](../README.md)).
+- `npm run codegen:check` uruchamia `npx convex codegen` i zawodzi, gdy wynik różni się od zacommitowanych plików. Skrypt wymaga skonfigurowanego wdrożenia Convex (wgrywa funkcje na deployment dev), więc działa lokalnie i w lane'ach, nie w CI. Jeśli nie masz wdrożenia: z kontem Convex `npx convex dev --once`, bez konta przepis z linią `CONVEX_AGENT_MODE=anonymous` w `.env.local` (patrz [README](../README.md#lokalny-backend-convex)).
 - Konflikt w `_generated` przy rebase: weź dowolną stronę i uruchom `npx convex codegen`.
 - Zmiany w plikach pod `convex/` nie powinny iść równolegle w kilku gałęziach, bo każda regeneruje te same pliki.
 
