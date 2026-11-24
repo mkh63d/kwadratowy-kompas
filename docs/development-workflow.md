@@ -98,10 +98,10 @@ Z `--local` skrypt uruchamia w nowym worktree `npx convex dev --once` w trybie a
 Komenda tworzy deployment, wgrywa funkcje z `convex/` i zapisuje w `.env.local`
 `CONVEX_DEPLOYMENT=anonymous:anonymous-agent` oraz `VITE_CONVEX_URL`, a skrypt dopisuje `PORT` i
 `PREVIEW_PORT`. Ścieżka lokalna nigdy nie dotyka chmury, także gdy CLI jest zalogowane: skrypt
-czyści dla tej komendy `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_SELF_HOSTED_URL`,
-`CONVEX_SELF_HOSTED_ADMIN_KEY` i `CONVEX_ALLOW_ANONYMOUS` odziedziczone z powłoki, bo CLI wybrałoby
-wskazany w nich deployment przed trybem anonimowym. `npx convex deployment create local` nie
-działa w trybie anonimowym (patrz [troubleshooting](troubleshooting.md)).
+czyści dla tej komendy `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_DEPLOYMENT_TOKEN`,
+`CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` i `CONVEX_ALLOW_ANONYMOUS` odziedziczone
+z powłoki, bo CLI wybrałoby wskazany w nich deployment przed trybem anonimowym.
+`npx convex deployment create local` nie działa w trybie anonimowym (patrz [troubleshooting](troubleshooting.md)).
 
 ## Unikanie kolizji
 

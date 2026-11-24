@@ -135,6 +135,7 @@ export const LOCAL_CONVEX_ENV = {
   CONVEX_ALLOW_ANONYMOUS: "",
   CONVEX_DEPLOYMENT: "",
   CONVEX_DEPLOY_KEY: "",
+  CONVEX_DEPLOYMENT_TOKEN: "",
   CONVEX_SELF_HOSTED_URL: "",
   CONVEX_SELF_HOSTED_ADMIN_KEY: "",
 };
@@ -235,8 +236,8 @@ export function findLane(slug, lanes) {
  */
 export function deletionHint(lane) {
   if (/^(local|anonymous):/.test(lane.deployment ?? ""))
-    return `Its data lives in ${join(lane.path, ".convex", "local", "default")} and is removed with the worktree.`;
-  return 'Delete it in the Convex dashboard (Project -> Deployments) or let it expire (created with --expiration "in 7 days").';
+    return `The local Convex deployment is removed with the worktree (its data lived in ${join(lane.path, ".convex", "local", "default")}).`;
+  return 'The Convex deployment is NOT deleted. Delete it in the Convex dashboard (Project -> Deployments) or let it expire (created with --expiration "in 7 days").';
 }
 
 /**
@@ -352,7 +353,7 @@ export function laneRm(deps, args) {
     );
   deps.log(
     `Removed worktree ${lane.path}. Branch ${lane.branch} is kept (delete it with \`git branch -d ${lane.branch}\` once merged).\n` +
-      `The Convex deployment is NOT deleted. ${deletionHint(lane)}`,
+      deletionHint(lane),
   );
   return lane;
 }

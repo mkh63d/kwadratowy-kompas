@@ -190,6 +190,7 @@ describe("lanes", () => {
   it("points cloud lanes at the dashboard or expiry, never a CLI delete", () => {
     const [lane] = toLanes(parseWorktrees(PORCELAIN), readEnv);
     const hint = lane ? deletionHint(lane) : "";
+    expect(hint).toMatch(/NOT deleted/);
     expect(hint).toMatch(/Convex dashboard/);
     expect(hint).toMatch(/in 7 days/);
     expect(hint).not.toMatch(/deployment delete/);
@@ -204,6 +205,7 @@ describe("lanes", () => {
       const hint = lane ? deletionHint(lane).replaceAll("\\", "/") : "";
       expect(hint).toContain("F:/work/app-12-login/.convex/local/default");
       expect(hint).toMatch(/removed with the worktree/);
+      expect(hint).not.toMatch(/NOT deleted/);
     },
   );
 });
@@ -305,6 +307,7 @@ describe("laneNew", () => {
       CONVEX_ALLOW_ANONYMOUS: "",
       CONVEX_DEPLOYMENT: "",
       CONVEX_DEPLOY_KEY: "",
+      CONVEX_DEPLOYMENT_TOKEN: "",
       CONVEX_SELF_HOSTED_URL: "",
       CONVEX_SELF_HOSTED_ADMIN_KEY: "",
     });
@@ -350,6 +353,16 @@ describe("laneRm", () => {
     expect(logs.join("\n")).toMatch(/NOT deleted/);
     expect(logs.join("\n")).not.toMatch(/deployment delete/);
     expect(logs.join("\n")).toMatch(/Convex dashboard/);
+  });
+
+  it("does not claim a local lane's deployment survives", () => {
+    const { deps, logs } = makeDeps({
+      readEnv: () => ({ CONVEX_DEPLOYMENT: "anonymous:anonymous-agent" }),
+    });
+    laneRm(deps, { command: "rm", slug: "12-login", force: false });
+    const log = logs.join("\n");
+    expect(log).toMatch(/removed with the worktree/);
+    expect(log).not.toMatch(/NOT deleted/);
   });
 
   it("passes --force through and reports a failed removal", () => {

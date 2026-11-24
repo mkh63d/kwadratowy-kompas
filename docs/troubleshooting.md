@@ -104,7 +104,8 @@ Pliki mają być w UTF-8 bez BOM. Polecenia PowerShella `Set-Content` i `Out-Fil
 **Co zrobić:**
 
 - Zaktualizuj gałąź: obecny `lane:new --local` używa `npx convex dev --once` w trybie anonimowym i nie wymaga `npx convex login`.
-- Worktree z nieudanej próby już istnieje, więc ponowne `lane:new` zgłosi, że katalog istnieje. Dokończ go ręcznie: w katalogu ścieżki uruchom `CONVEX_AGENT_MODE=anonymous npx convex dev --once` (PowerShell: `$env:CONVEX_AGENT_MODE='anonymous'; npx convex dev --once`), potem dopisz do `.env.local` `PORT` i `PREVIEW_PORT` (pierwsza wolna para, np. `5174` i `4174`, patrz `npm run lane:list`). Albo usuń go (`npm run lane:rm -- <nr-issue>-<slug> --force`, potem `git branch -D feat/<nr-issue>-<slug>`) i uruchom `lane:new` jeszcze raz.
+- Worktree z nieudanej próby już istnieje, więc ponowne `lane:new` zgłosi, że katalog istnieje. Najprościej go usunąć (`npm run lane:rm -- <nr-issue>-<slug> --force`, potem `git branch -D feat/<nr-issue>-<slug>`) i uruchomić `lane:new` jeszcze raz: skrypt sam pilnuje, żeby deployment powstał lokalnie.
+- Jeśli wolisz dokończyć go ręcznie, najpierw sprawdź, że w powłoce nie jest ustawiona żadna z `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_DEPLOYMENT_TOKEN`, `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` ani `CONVEX_ALLOW_ANONYMOUS=false`. Inaczej CLI użyje wskazanego w nich deploymentu, także w chmurze. Potem w katalogu ścieżki uruchom `CONVEX_AGENT_MODE=anonymous npx convex dev --once` (PowerShell: `$env:CONVEX_AGENT_MODE='anonymous'; npx convex dev --once`) i dopisz do `.env.local` `PORT` i `PREVIEW_PORT` (pierwsza wolna para, np. `5174` i `4174`, patrz `npm run lane:list`).
 - Nie loguj się do Convex tylko po to, żeby obejść ten błąd: deployment lokalny nie potrzebuje konta.
 
 ## Playwright: brakuje przeglądarek
