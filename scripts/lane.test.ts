@@ -216,7 +216,6 @@ describe("lanes", () => {
         deployment: "dev:happy-fox-123 # team: t, project: p",
         convexPort: null,
         convexSitePort: null,
-        anonymousMode: false,
       },
     ]);
   });
@@ -404,14 +403,8 @@ describe("laneNew", () => {
       CONVEX_SELF_HOSTED_ADMIN_KEY: "",
     });
     expect(written).toEqual([
-      {
-        dir: result.lanePath,
-        values: {
-          PORT: 5175,
-          PREVIEW_PORT: 4175,
-          CONVEX_AGENT_MODE: "anonymous",
-        },
-      },
+      { dir: result.lanePath, values: { PORT: 5175, PREVIEW_PORT: 4175 } },
+      { dir: result.lanePath, values: { CONVEX_AGENT_MODE: "anonymous" } },
     ]);
   });
 
@@ -488,35 +481,51 @@ describe("laneNew", () => {
     expect(written).toEqual([]);
   });
 
-  it("writes a --local lane's env right after the worktree, before npm ci", async () => {
+  function recordOrder(failOn: string) {
     const order: string[] = [];
     const { deps } = makeDeps({
       run: (command: string) => {
-        order.push(command);
-        return command === "npm" ? 1 : 0;
+        const name = command === process.execPath ? "convex" : command;
+        order.push(name);
+        return name === failOn ? 1 : 0;
       },
       writeEnv: (_dir: string, values: Record<string, string | number>) => {
         order.push(JSON.stringify(values));
       },
     });
-    await expect(laneNew(deps, { ...args, local: true })).rejects.toThrow(
-      /npm ci/,
-    );
-    expect(order).toEqual([
-      "git",
-      JSON.stringify({
-        PORT: 5175,
-        PREVIEW_PORT: 4175,
-        CONVEX_AGENT_MODE: "anonymous",
-      }),
-      "npm",
-    ]);
+    return { deps, order };
+  }
+  const portsEnv = JSON.stringify({ PORT: 5175, PREVIEW_PORT: 4175 });
+  const agentEnv = JSON.stringify({ CONVEX_AGENT_MODE: "anonymous" });
+
+  it("writes a --local lane's ports before npm ci and agent mode only after the deployment exists", async () => {
+    const ok = recordOrder("none");
+    await laneNew(ok.deps, { ...args, local: true });
+    expect(ok.order).toEqual(["git", portsEnv, "npm", "convex", agentEnv]);
+
+    const failedNpm = recordOrder("npm");
+    await expect(
+      laneNew(failedNpm.deps, { ...args, local: true }),
+    ).rejects.toThrow(/npm ci/);
+    expect(failedNpm.order).toEqual(["git", portsEnv, "npm"]);
+
+    const failedConvex = recordOrder("convex");
+    await expect(
+      laneNew(failedConvex.deps, { ...args, local: true }),
+    ).rejects.toThrow(/dev --once/);
+    expect(failedConvex.order).toEqual(["git", portsEnv, "npm", "convex"]);
   });
 });
 
 describe("laneRm", () => {
   it("removes the worktree and only prints the deletion command", () => {
-    const { deps, calls, logs } = makeDeps();
+    const { deps, calls, logs } = makeDeps({
+      readEnv: () => ({
+        PORT: "5174",
+        PREVIEW_PORT: "4174",
+        CONVEX_DEPLOYMENT: "dev:happy-fox-123",
+      }),
+    });
     laneRm(deps, { command: "rm", slug: "12-login", force: false });
     expect(calls).toEqual([
       {
@@ -534,7 +543,7 @@ describe("laneRm", () => {
     ["a local lane", { CONVEX_DEPLOYMENT: "anonymous:anonymous-agent" }],
     [
       "a --local lane whose creation failed",
-      { PORT: "5175", PREVIEW_PORT: "4175", CONVEX_AGENT_MODE: "anonymous" },
+      { PORT: "5175", PREVIEW_PORT: "4175" },
     ],
   ])("does not claim the deployment of %s survives", (_label, env) => {
     const { deps, logs } = makeDeps({ readEnv: () => env });
@@ -542,6 +551,21 @@ describe("laneRm", () => {
     const log = logs.join("\n");
     expect(log).toMatch(/removed with the worktree/);
     expect(log).not.toMatch(/NOT deleted/);
+  });
+
+  it.each([
+    [
+      "a cloud deployment wins over a stray agent-mode line",
+      {
+        CONVEX_DEPLOYMENT: "dev:happy-fox-123",
+        CONVEX_AGENT_MODE: "anonymous",
+      },
+    ],
+    ["a lane with no env at all", {}],
+  ])("keeps the cloud hint for %s", (_label, env) => {
+    const { deps, logs } = makeDeps({ readEnv: () => env });
+    laneRm(deps, { command: "rm", slug: "12-login", force: false });
+    expect(logs.join("\n")).toMatch(/NOT deleted/);
   });
 
   it("passes --force through and reports a failed removal", () => {

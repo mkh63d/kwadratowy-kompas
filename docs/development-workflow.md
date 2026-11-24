@@ -105,9 +105,12 @@ Z `--local` skrypt uruchamia w nowym worktree
 wejściu (stdin nie jest TTY). Komenda tworzy deployment anonimowy, wgrywa funkcje z `convex/` i
 zapisuje w `.env.local` `CONVEX_DEPLOYMENT=anonymous:anonymous-<katalog worktree>` (np.
 `anonymous:anonymous-kwadratowy-kompas-12-login`), `VITE_CONVEX_URL` i `VITE_CONVEX_SITE_URL`.
-`PORT`, `PREVIEW_PORT` i `CONVEX_AGENT_MODE=anonymous` skrypt zapisuje wcześniej, zaraz po
-utworzeniu worktree, jeszcze przed `npm ci`. Dzięki temu `lane:rm` ścieżki, której tworzenie się
-nie udało, wie, że była lokalna.
+`PORT` i `PREVIEW_PORT` skrypt zapisuje wcześniej, zaraz po utworzeniu worktree, jeszcze przed
+`npm ci`. Dzięki temu `lane:rm` ścieżki, której tworzenie się nie udało, wie, że była lokalna.
+`CONVEX_AGENT_MODE=anonymous` dopisuje dopiero po udanym utworzeniu deploymentu. Gdyby ta linia
+była w pliku wcześniej, ręczne dokończenie nieudanej ścieżki (patrz
+[troubleshooting](troubleshooting.md)) wczytałoby ją z `.env.local` i nazwało deployment
+`anonymous-agent`.
 
 Każda ścieżka lokalna ma więc własny backend: własną nazwę deploymentu i własne porty. Ścieżka N
 dostaje porty `3210 + 2N` (API) i `3211 + 2N` (HTTP actions): ścieżka 1 to `3212`/`3213`,

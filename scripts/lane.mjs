@@ -221,7 +221,7 @@ export function localBackendPort(url) {
  * @typedef {{
  *   slug: string, path: string, branch: string,
  *   port: string | null, previewPort: string | null, deployment: string | null,
- *   convexPort: string | null, convexSitePort: string | null, anonymousMode: boolean,
+ *   convexPort: string | null, convexSitePort: string | null,
  * }} Lane
  */
 
@@ -245,7 +245,6 @@ export function toLanes(worktrees, readEnv) {
         deployment: env.CONVEX_DEPLOYMENT ?? null,
         convexPort: localBackendPort(env.VITE_CONVEX_URL),
         convexSitePort: localBackendPort(env.VITE_CONVEX_SITE_URL),
-        anonymousMode: env.CONVEX_AGENT_MODE === "anonymous",
       },
     ];
   });
@@ -296,12 +295,17 @@ export function findLane(slug, lanes) {
 /**
  * The Convex CLI has no `deployment delete`: cloud deployments are removed in the dashboard
  * or expire, local ones live inside the worktree. CONVEX_DEPLOYMENT is `local:<name>` or
- * `anonymous:<name>` (what `lane:new --local` creates) for local. A `--local` lane whose
- * creation failed has no CONVEX_DEPLOYMENT yet, only the anonymous mode written up front.
+ * `anonymous:<name>` (what `lane:new --local` creates) for local. A lane with PORT but no
+ * CONVEX_DEPLOYMENT is a `--local` lane whose creation failed: only `--local` writes its ports
+ * before the Convex step.
  * @param {Lane} lane
  */
 export function deletionHint(lane) {
-  if (lane.anonymousMode || /^(local|anonymous):/.test(lane.deployment ?? ""))
+  const local =
+    lane.deployment === null
+      ? lane.port !== null
+      : /^(local|anonymous):/.test(lane.deployment);
+  if (local)
     return `The local Convex deployment is removed with the worktree (its data lived in ${join(lane.path, ".convex", "local", "default")}).`;
   return 'The Convex deployment is NOT deleted. Delete it in the Convex dashboard (Project -> Deployments) or let it expire (created with --expiration "in 7 days").';
 }
@@ -369,15 +373,10 @@ export async function laneNew(deps, args) {
 
   step(`Creating worktree ${lanePath} on ${branch}`);
   must("git", ["worktree", "add", "-b", branch, lanePath], mainPath);
-  const laneEnv = {
-    PORT: port,
-    PREVIEW_PORT: previewPort,
-    // Without it a later `convex dev` with a logged-in CLI offers to link the lane to the cloud (default: yes).
-    ...(args.local ? { CONVEX_AGENT_MODE: "anonymous" } : {}),
-  };
+  const ports = { PORT: port, PREVIEW_PORT: previewPort };
   // Written before the slow steps so another lane:new reserves these ports, and lane:rm of a
   // failed --local lane knows it is local. The CLI keeps existing lines when it edits the file.
-  if (args.local) deps.writeEnv(lanePath, laneEnv);
+  if (args.local) deps.writeEnv(lanePath, ports);
 
   step("Running npm ci (takes a minute or two)");
   must("npm", ["ci"], lanePath);
@@ -413,7 +412,15 @@ export async function laneNew(deps, args) {
     args.local ? { env: LOCAL_CONVEX_ENV, stdin: "ignore" } : {},
   );
 
-  if (!args.local) deps.writeEnv(lanePath, laneEnv);
+  deps.writeEnv(
+    lanePath,
+    args.local
+      ? // Only now: set earlier, a manual `convex dev` in a failed lane would load it from the
+        // file and name the deployment `anonymous-agent`. Without it a later `convex dev` with a
+        // logged-in CLI offers to link the lane to the cloud (default: yes).
+        { CONVEX_AGENT_MODE: "anonymous" }
+      : ports,
+  );
   const backend = args.local
     ? `\n  convex  http://127.0.0.1:${convexPort} (site ${convexSitePort})`
     : "";
