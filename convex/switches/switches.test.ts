@@ -451,6 +451,32 @@ describe("internal.switches.backlog.processBatch", () => {
     ).resolves.toBe("stopped");
   });
 
+  it("on(send), off, on(send) stops the first send chain", async () => {
+    const t = setup();
+    const firstChain = await startChain(t, "discord", "send");
+    await change(t, "discord", false, "pause");
+    const secondChain = await change(t, "discord", true, "send");
+
+    await expect(run(t, "discord", "send", firstChain)).resolves.toBe(
+      "stopped",
+    );
+    await expect(
+      run(t, "discord", "send", encoded(firstChain, null, 100)),
+    ).resolves.toBe("stopped");
+    await expect(run(t, "discord", "send", secondChain)).resolves.toBe(
+      "stalled",
+    );
+  });
+
+  it("keeps a chain running when another key changes", async () => {
+    const t = setup();
+    const chain = await startChain(t, "discord", "send");
+    await change(t, "mcp", false);
+
+    await expect(run(t, "discord", "send", chain)).resolves.toBe("stalled");
+    await expect(run(t, "discord", "send")).resolves.toBe("stalled");
+  });
+
   it("throws invalid for a malformed cursor", async () => {
     const t = setup();
     const chain = await startChain(t, "discord", "send");
