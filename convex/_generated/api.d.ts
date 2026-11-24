@@ -21,9 +21,14 @@ import type * as ingest_tables from "../ingest/tables.js";
 import type * as lib_enums from "../lib/enums.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_functions from "../lib/functions.js";
+import type * as lib_switches from "../lib/switches.js";
 import type * as lib_testing_fixtures from "../lib/testing/fixtures.js";
 import type * as programs_tables from "../programs/tables.js";
 import type * as sources_tables from "../sources/tables.js";
+import type * as switches_backlog from "../switches/backlog.js";
+import type * as switches_cli from "../switches/cli.js";
+import type * as switches_mutations from "../switches/mutations.js";
+import type * as switches_queries from "../switches/queries.js";
 import type * as switches_tables from "../switches/tables.js";
 
 import type {
@@ -46,9 +51,14 @@ declare const fullApi: ApiFromModules<{
   "lib/enums": typeof lib_enums;
   "lib/errors": typeof lib_errors;
   "lib/functions": typeof lib_functions;
+  "lib/switches": typeof lib_switches;
   "lib/testing/fixtures": typeof lib_testing_fixtures;
   "programs/tables": typeof programs_tables;
   "sources/tables": typeof sources_tables;
+  "switches/backlog": typeof switches_backlog;
+  "switches/cli": typeof switches_cli;
+  "switches/mutations": typeof switches_mutations;
+  "switches/queries": typeof switches_queries;
   "switches/tables": typeof switches_tables;
 }>;
 
