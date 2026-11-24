@@ -1,3 +1,4 @@
+import { authTables } from "@convex-dev/auth/server";
 import { convexTest } from "convex-test";
 import { makeFunctionReference, type WithoutSystemFields } from "convex/server";
 import type { GenericValidator } from "convex/values";
@@ -343,11 +344,15 @@ const SPEC_SEARCH_INDEX = {
 type ExportedTable = {
   tableName: string;
   indexes: { indexDescriptor: string; fields: string[] }[];
+  stagedDbIndexes: unknown[];
   searchIndexes: {
     indexDescriptor: string;
     searchField: string;
     filterFields: string[];
   }[];
+  stagedSearchIndexes: unknown[];
+  vectorIndexes: unknown[];
+  stagedVectorIndexes: unknown[];
 };
 
 // export() is @internal in Convex's typings, but it is exactly what a deployment receives and the
@@ -358,161 +363,307 @@ function exportedTable(table: AppTable) {
   ) as {
     tables: ExportedTable[];
   };
-  return tables.find(({ tableName }) => tableName === table)!;
+  const exported = tables.find(({ tableName }) => tableName === table);
+  if (exported === undefined) {
+    throw new Error(`schema.export() has no table "${table}"`);
+  }
+  return exported;
 }
 
 const NOW = 1_764_000_000_000;
 
-const FULL_DOCS: {
-  [T in AppTable]: (refs: Refs) => WithoutSystemFields<Doc<T>>;
-} = {
-  entries: (refs) => ({
-    slug: "grant-lodz",
-    type: "dofinansowanie",
-    title: "Grant",
-    summary: "Grant dla startupów",
-    body: "Treść",
-    organizer: "Miasto Łódź",
-    location: "Łódź",
-    isOnline: false,
-    url: "https://example.org/grant",
-    tags: ["grant"],
-    stages: ["idea", "mvp"],
-    amountText: "do 50 000 zł",
-    amountMaxPln: 50_000,
-    cost: "free",
-    startsAt: NOW,
-    endsAt: NOW + 1,
-    deadline: NOW + 2,
-    status: "archived",
-    publishedAt: NOW,
-    archiveReason: "expired",
-    withdrawReason: "duplicate",
-    featuredUntil: NOW + 3,
-    sponsored: false,
-    sourceKey: "manual",
-    sourceRef: "ref-1",
-    attributionSourceKeys: ["manual"],
-    noCrosspost: false,
-    rawItemId: refs.rawItemId,
-    programId: refs.programId,
-    discordChannelOverride: "123",
-    discordPing: true,
-    mergedInto: refs.entryId,
-    searchText: "grant grant dla startupów miasto łódź grant",
-    sortAt: NOW + 2,
-    createdBy: refs.userId,
-    updatedAt: NOW,
-  }),
-  rawItems: (refs) => ({
-    sourceKey: "startupywpolsce-wa",
-    externalId: "msg-1",
-    text: "Nabór do akceleratora",
-    url: "https://example.org/msg-1",
-    postedAt: NOW,
-    receivedAt: NOW,
-    contentHash: "a".repeat(64),
-    state: "processed",
-    discardReason: "prefilter",
-    extraction: {
-      ok: true,
-      provider: "mock",
-      model: "mock",
-      relevant: true,
-      confidence: 0.9,
-      processedAt: NOW,
+type TableDoc<T extends AppTable> = WithoutSystemFields<Doc<T>>;
+
+type FieldRule = {
+  field: string;
+  condition: (doc: Record<string, unknown>) => boolean;
+  mode: "iff" | "onlyIf";
+};
+
+// §4 "set iff" / "with" / "only while" notes. sentAt is not in §4; CTO round-1 ruling on T02.
+const FIELD_RULES: { [T in AppTable]?: FieldRule[] } = {
+  entries: [
+    {
+      field: "archiveReason",
+      condition: (doc) => doc.status === "archived",
+      mode: "iff",
     },
-    entryId: refs.entryId,
-    submittedBy: refs.userId,
-  }),
-  sources: () => ({
-    key: "startupywpolsce-wa",
-    name: "StartupywPolsce.pl",
-    kind: "whatsapp",
-    ingestTokenHash: "b".repeat(64),
-    ingestTokenRotatedAt: NOW,
-    noCrosspost: true,
-    newsSiteOnly: true,
-    attribution: { name: "StartupywPolsce.pl", url: "https://example.org" },
-    promoLine: "Promo",
-    lastRunAt: NOW,
-    lastItemCount: 3,
-    lastNonEmptyAt: NOW,
-    lastError: "timeout",
-  }),
-  programs: () => ({
-    name: "Akcelerator",
-    slug: "akcelerator",
-    kind: "accelerator",
-    url: "https://example.org/akcelerator",
-  }),
-  discordRoutes: () => ({
-    entryType: "szkolenie",
-    tag: "free",
-    channelId: "111",
-    channelName: "szkolenia",
-    channelKind: "announcement",
-    pingRoleId: "222",
-    pingPolicy: "new",
-    crosspost: true,
-  }),
-  discordPosts: (refs) => ({
-    entryId: refs.entryId,
-    kind: "main",
-    channelId: "111",
-    messageId: "333",
-    threadId: "444",
-    contentHash: "c".repeat(64),
-    pinned: true,
-    crosspostedAt: NOW,
-    remindedAt: NOW,
-    archivedAt: NOW,
-    deletedAt: NOW,
-  }),
-  discordOutbox: (refs) => ({
-    entryId: refs.entryId,
-    action: "create",
-    channelId: "111",
-    status: "failed",
-    nonce: "abcdefghij0123456789",
-    attempts: 2,
-    nextAttemptAt: NOW,
-    lastAttemptAt: NOW,
-    sentAt: NOW,
-    lastError: "503",
-    skipReason: "backlog_skipped",
-    suppressNotifications: true,
-    scheduledFunctionId: refs.scheduledFunctionId,
-  }),
-  switches: (refs) => ({
-    key: "discord",
-    enabled: false,
-    updatedAt: NOW,
-    updatedBy: refs.userId,
-  }),
-  switchLog: (refs) => ({
-    key: "discord",
-    from: false,
-    to: true,
-    at: NOW,
-    by: refs.userId,
-    reason: "launch",
-    backlog: "send",
-    backlogCount: 4,
-  }),
-  profiles: (refs) => ({
-    userId: refs.userId,
-    role: "moderator",
-    displayName: "Ola",
-    discordUserId: "555",
-  }),
-  roleLog: (refs) => ({
-    userId: refs.userId,
-    from: "user",
-    to: "admin",
-    at: NOW,
-    by: refs.userId,
-  }),
+    {
+      field: "withdrawReason",
+      condition: (doc) => doc.status === "withdrawn",
+      mode: "iff",
+    },
+    {
+      field: "featuredUntil",
+      condition: (doc) => doc.status === "published",
+      mode: "onlyIf",
+    },
+  ],
+  rawItems: [
+    {
+      field: "discardReason",
+      condition: (doc) => doc.state === "discarded",
+      mode: "iff",
+    },
+    {
+      field: "entryId",
+      condition: (doc) => doc.state === "processed",
+      mode: "iff",
+    },
+  ],
+  sources: [
+    {
+      field: "ingestTokenRotatedAt",
+      condition: (doc) => doc.ingestTokenHash !== undefined,
+      mode: "iff",
+    },
+  ],
+  discordOutbox: [
+    {
+      field: "skipReason",
+      condition: (doc) => doc.status === "skipped",
+      mode: "iff",
+    },
+    {
+      field: "sentAt",
+      condition: (doc) => doc.status === "sent",
+      mode: "onlyIf",
+    },
+  ],
+};
+
+function ruleViolations(table: AppTable, doc: object): string[] {
+  const fields = doc as Record<string, unknown>;
+  return (FIELD_RULES[table] ?? []).flatMap(({ field, condition, mode }) => {
+    const isSet = fields[field] !== undefined;
+    const holds = condition(fields);
+    if (isSet && !holds) {
+      return [`${field} is set but its condition does not hold`];
+    }
+    if (!isSet && holds && mode === "iff") {
+      return [`${field} is missing but its condition holds`];
+    }
+    return [];
+  });
+}
+
+function pick<D>(docs: D[], matches: (doc: D) => boolean): D {
+  const doc = docs.find(matches);
+  if (doc === undefined) {
+    throw new Error("no fixture matches");
+  }
+  return doc;
+}
+
+// Each table's variants obey FIELD_RULES and together set every §4 field; the first is the base
+// document for the required-field tests.
+const VALID_DOCS: {
+  [T in AppTable]: (refs: Refs) => [TableDoc<T>, ...TableDoc<T>[]];
+} = {
+  entries: (refs) => {
+    const common: Omit<TableDoc<"entries">, "status"> = {
+      slug: "grant-lodz",
+      type: "dofinansowanie",
+      title: "Grant",
+      summary: "Grant dla startupów",
+      body: "Treść",
+      organizer: "Miasto Łódź",
+      location: "Łódź",
+      isOnline: false,
+      url: "https://example.org/grant",
+      tags: ["grant"],
+      stages: ["idea", "mvp"],
+      amountText: "do 50 000 zł",
+      amountMaxPln: 50_000,
+      cost: "free",
+      startsAt: NOW,
+      endsAt: NOW + 1,
+      deadline: NOW + 2,
+      publishedAt: NOW,
+      sponsored: false,
+      sourceKey: "manual",
+      sourceRef: "ref-1",
+      attributionSourceKeys: ["manual"],
+      noCrosspost: false,
+      rawItemId: refs.rawItemId,
+      programId: refs.programId,
+      discordChannelOverride: "123",
+      discordPing: true,
+      searchText: "grant grant dla startupów miasto łódź grant",
+      sortAt: NOW + 2,
+      createdBy: refs.userId,
+      updatedAt: NOW,
+    };
+    return [
+      { ...common, status: "published", featuredUntil: NOW + 3 },
+      { ...common, status: "archived", archiveReason: "expired" },
+      {
+        ...common,
+        status: "withdrawn",
+        withdrawReason: "duplicate",
+        mergedInto: refs.entryId,
+      },
+    ];
+  },
+  rawItems: (refs) => {
+    const common: Omit<TableDoc<"rawItems">, "state"> = {
+      sourceKey: "form",
+      externalId: "form-1",
+      text: "Nabór do akceleratora",
+      url: "https://example.org/form-1",
+      postedAt: NOW,
+      receivedAt: NOW,
+      contentHash: "a".repeat(64),
+      submittedBy: refs.userId,
+    };
+    const extraction = { ok: true, provider: "mock", model: "mock" } as const;
+    return [
+      {
+        ...common,
+        state: "processed",
+        extraction: {
+          ...extraction,
+          relevant: true,
+          confidence: 0.9,
+          processedAt: NOW,
+        },
+        entryId: refs.entryId,
+      },
+      {
+        ...common,
+        state: "discarded",
+        discardReason: "irrelevant",
+        extraction: {
+          ...extraction,
+          relevant: false,
+          confidence: 0.95,
+          processedAt: NOW,
+        },
+      },
+    ];
+  },
+  sources: () => [
+    {
+      key: "startupywpolsce-wa",
+      name: "StartupywPolsce.pl",
+      kind: "whatsapp",
+      ingestTokenHash: "b".repeat(64),
+      ingestTokenRotatedAt: NOW,
+      noCrosspost: true,
+      newsSiteOnly: true,
+      attribution: { name: "StartupywPolsce.pl", url: "https://example.org" },
+      promoLine: "Promo",
+      lastRunAt: NOW,
+      lastItemCount: 3,
+      lastNonEmptyAt: NOW,
+      lastError: "timeout",
+    },
+  ],
+  programs: () => [
+    {
+      name: "Akcelerator",
+      slug: "akcelerator",
+      kind: "accelerator",
+      url: "https://example.org/akcelerator",
+    },
+  ],
+  discordRoutes: () => [
+    {
+      entryType: "szkolenie",
+      tag: "free",
+      channelId: "111",
+      channelName: "szkolenia",
+      channelKind: "announcement",
+      pingRoleId: "222",
+      pingPolicy: "new",
+      crosspost: true,
+    },
+  ],
+  discordPosts: (refs) => [
+    {
+      entryId: refs.entryId,
+      kind: "main",
+      channelId: "111",
+      messageId: "333",
+      threadId: "444",
+      contentHash: "c".repeat(64),
+      pinned: true,
+      crosspostedAt: NOW,
+      remindedAt: NOW,
+      archivedAt: NOW,
+      deletedAt: NOW,
+    },
+  ],
+  discordOutbox: (refs) => {
+    const common = {
+      entryId: refs.entryId,
+      action: "create",
+      channelId: "111",
+      nonce: "abcdefghij0123456789",
+    } as const;
+    return [
+      {
+        ...common,
+        status: "pending",
+        attempts: 1,
+        nextAttemptAt: NOW + 60_000,
+        lastAttemptAt: NOW,
+        lastError: "503",
+        scheduledFunctionId: refs.scheduledFunctionId,
+      },
+      {
+        ...common,
+        status: "sent",
+        attempts: 2,
+        lastAttemptAt: NOW,
+        sentAt: NOW,
+        suppressNotifications: true,
+      },
+      {
+        ...common,
+        status: "skipped",
+        attempts: 0,
+        skipReason: "backlog_skipped",
+      },
+    ];
+  },
+  switches: (refs) => [
+    {
+      key: "discord",
+      enabled: false,
+      updatedAt: NOW,
+      updatedBy: refs.userId,
+    },
+  ],
+  switchLog: (refs) => [
+    {
+      key: "discord",
+      from: false,
+      to: true,
+      at: NOW,
+      by: refs.userId,
+      reason: "launch",
+      backlog: "send",
+      backlogCount: 4,
+    },
+  ],
+  profiles: (refs) => [
+    {
+      userId: refs.userId,
+      role: "moderator",
+      displayName: "Ola",
+      discordUserId: "555",
+    },
+  ],
+  roleLog: (refs) => [
+    {
+      userId: refs.userId,
+      from: "user",
+      to: "admin",
+      at: NOW,
+      by: refs.userId,
+    },
+  ],
 };
 
 const TABLES = Object.keys(SPEC) as AppTable[];
@@ -612,16 +763,7 @@ describe("enums (§4.1)", () => {
 describe("schema shape (§4)", () => {
   it("contains the auth tables and every §4 table", () => {
     expect(Object.keys(schema.tables).sort()).toEqual(
-      [
-        ...TABLES,
-        "users",
-        "authSessions",
-        "authAccounts",
-        "authRefreshTokens",
-        "authVerificationCodes",
-        "authVerifiers",
-        "authRateLimits",
-      ].sort(),
+      [...TABLES, ...Object.keys(authTables)].sort(),
     );
   });
 
@@ -649,18 +791,84 @@ describe("schema shape (§4)", () => {
       expect(exported.searchIndexes).toEqual(
         table === "entries" ? [SPEC_SEARCH_INDEX] : [],
       );
+      expect({
+        stagedDbIndexes: exported.stagedDbIndexes,
+        stagedSearchIndexes: exported.stagedSearchIndexes,
+        vectorIndexes: exported.vectorIndexes,
+        stagedVectorIndexes: exported.stagedVectorIndexes,
+      }).toEqual({
+        stagedDbIndexes: [],
+        stagedSearchIndexes: [],
+        vectorIndexes: [],
+        stagedVectorIndexes: [],
+      });
     },
   );
 });
 
+describe("fixtures", () => {
+  it.each(TABLES)(
+    "%s fixtures obey the §4 conditional field rules",
+    async (table) => {
+      const { refs } = setup();
+      for (const doc of VALID_DOCS[table](await refs)) {
+        expect(ruleViolations(table, doc)).toEqual([]);
+      }
+    },
+  );
+
+  it.each(TABLES)("%s fixtures together set every §4 field", async (table) => {
+    const { refs } = setup();
+    const setFields = new Set(
+      VALID_DOCS[table](await refs).flatMap((doc) =>
+        Object.entries(doc)
+          .filter(([, value]) => value !== undefined)
+          .map(([field]) => field),
+      ),
+    );
+    expect([...setFields].sort()).toEqual(Object.keys(SPEC[table]).sort());
+  });
+
+  it.each([
+    [
+      "entries",
+      {
+        status: "archived",
+        archiveReason: "expired",
+        withdrawReason: "duplicate",
+      },
+    ],
+    ["entries", { status: "withdrawn" }],
+    [
+      "entries",
+      { status: "archived", archiveReason: "expired", featuredUntil: NOW },
+    ],
+    [
+      "rawItems",
+      { state: "processed", entryId: "e", discardReason: "prefilter" },
+    ],
+    [
+      "rawItems",
+      { state: "discarded", discardReason: "irrelevant", entryId: "e" },
+    ],
+    ["sources", { ingestTokenHash: "h" }],
+    ["discordOutbox", { status: "failed", skipReason: "backlog_skipped" }],
+    ["discordOutbox", { status: "failed", sentAt: NOW }],
+  ] as const)("the rule check rejects %s %j", (table, doc) => {
+    expect(ruleViolations(table, doc)).not.toEqual([]);
+  });
+});
+
 describe("documents (§4, CTO N2)", () => {
   it.each(TABLES)(
-    "%s accepts a document with every field set",
+    "%s accepts every fixture and reads it back",
     async (table) => {
       const { t, refs } = setup();
-      const id = await insertUnchecked(t, table, FULL_DOCS[table](await refs));
-      const stored = await t.run((ctx) => ctx.db.get(id));
-      expect(stored).toMatchObject(FULL_DOCS[table](await refs));
+      for (const doc of VALID_DOCS[table](await refs)) {
+        const id = await insertUnchecked(t, table, doc);
+        const stored = await t.run((ctx) => ctx.db.get(id));
+        expect(stored).toMatchObject(doc);
+      }
     },
   );
 
@@ -675,7 +883,7 @@ describe("documents (§4, CTO N2)", () => {
         insertUnchecked(
           t,
           table,
-          without(FULL_DOCS[table](await refs), optional),
+          without(VALID_DOCS[table](await refs)[0], optional),
         ),
       ).resolves.toBeTypeOf("string");
     },
@@ -688,13 +896,20 @@ describe("documents (§4, CTO N2)", () => {
   )("%s rejects a document missing required %s", async (table, field) => {
     const { t, refs } = setup();
     await expect(
-      insertUnchecked(t, table, without(FULL_DOCS[table](await refs), [field])),
+      insertUnchecked(
+        t,
+        table,
+        without(VALID_DOCS[table](await refs)[0], [field]),
+      ),
     ).rejects.toThrow(/Validator error/);
   });
 
   it("rawItems accepts both extraction shapes and rejects ok: false without errorCode", async () => {
     const { t, refs } = setup();
-    const base = FULL_DOCS.rawItems(await refs);
+    const processed = pick(
+      VALID_DOCS.rawItems(await refs),
+      (doc) => doc.state === "processed",
+    );
     const failed = {
       ok: false,
       provider: "openai-compatible",
@@ -702,16 +917,21 @@ describe("documents (§4, CTO N2)", () => {
       errorCode: "timeout",
       processedAt: NOW,
     };
+    const manual = {
+      ...without(processed, ["entryId"]),
+      state: "manual",
+      extraction: failed,
+    };
 
-    await expect(insertUnchecked(t, "rawItems", base)).resolves.toBeTypeOf(
+    await expect(insertUnchecked(t, "rawItems", processed)).resolves.toBeTypeOf(
+      "string",
+    );
+    await expect(insertUnchecked(t, "rawItems", manual)).resolves.toBeTypeOf(
       "string",
     );
     await expect(
-      insertUnchecked(t, "rawItems", { ...base, extraction: failed }),
-    ).resolves.toBeTypeOf("string");
-    await expect(
       insertUnchecked(t, "rawItems", {
-        ...base,
+        ...manual,
         extraction: without(failed, ["errorCode"]),
       }),
     ).rejects.toThrow(/Validator error/);
@@ -720,8 +940,10 @@ describe("documents (§4, CTO N2)", () => {
   it("discordOutbox accepts a skipped row with skipReason recheck_refused", async () => {
     const { t, refs } = setup();
     const row = {
-      ...FULL_DOCS.discordOutbox(await refs),
-      status: "skipped",
+      ...pick(
+        VALID_DOCS.discordOutbox(await refs),
+        (doc) => doc.status === "skipped",
+      ),
       skipReason: "recheck_refused",
     };
     await expect(insertUnchecked(t, "discordOutbox", row)).resolves.toBeTypeOf(
@@ -732,8 +954,10 @@ describe("documents (§4, CTO N2)", () => {
   it("entries search index search_text filters by status and type", async () => {
     const { t, refs } = setup();
     const entry = {
-      ...FULL_DOCS.entries(await refs),
-      status: "published" as const,
+      ...pick(
+        VALID_DOCS.entries(await refs),
+        (doc) => doc.status === "published",
+      ),
       type: "konkurs" as const,
     };
     const id = await insertUnchecked(t, "entries", entry);

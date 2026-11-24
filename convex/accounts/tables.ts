@@ -17,7 +17,6 @@ export const accountsTables = {
     from: roleValidator,
     to: roleValidator,
     at: v.number(),
-    // Absent when the change came from the CLI.
     by: v.optional(v.id("users")),
   }).index("by_userId_at", ["userId", "at"]),
 };
