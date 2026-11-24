@@ -22,6 +22,7 @@ import type * as lib_entries from "../lib/entries.js";
 import type * as lib_enums from "../lib/enums.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_functions from "../lib/functions.js";
+import type * as lib_rawItems from "../lib/rawItems.js";
 import type * as lib_switches from "../lib/switches.js";
 import type * as lib_testing_fixtures from "../lib/testing/fixtures.js";
 import type * as lib_visibility from "../lib/visibility.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   "lib/enums": typeof lib_enums;
   "lib/errors": typeof lib_errors;
   "lib/functions": typeof lib_functions;
+  "lib/rawItems": typeof lib_rawItems;
   "lib/switches": typeof lib_switches;
   "lib/testing/fixtures": typeof lib_testing_fixtures;
   "lib/visibility": typeof lib_visibility;
