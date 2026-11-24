@@ -9,6 +9,10 @@ convex/*/tables.ts
 convex/*/tables.test.ts
 convex/ai/**
 convex/lib/**
+convex/http.ts
+convex/auth.ts
+convex/auth.config.ts
+convex/crons.ts
 src/app/**
 src/components/ui/**
 src/lib/**
@@ -18,6 +22,7 @@ package-lock.json
 scripts/hot-files-check.mjs
 scripts/lib/hot-files.mjs
 .claude/**
+api/_lib/**
 CLAUDE.md
 
 # root config files
