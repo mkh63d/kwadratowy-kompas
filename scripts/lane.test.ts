@@ -9,6 +9,7 @@ import {
   parseArgs,
   parseWorktrees,
   pickLane,
+  realDeps,
   toLanes,
   upsertEnv,
 } from "./lane.mjs";
@@ -312,7 +313,14 @@ describe("laneNew", () => {
       CONVEX_SELF_HOSTED_ADMIN_KEY: "",
     });
     expect(written).toEqual([
-      { dir: result.lanePath, values: { PORT: 5175, PREVIEW_PORT: 4175 } },
+      {
+        dir: result.lanePath,
+        values: {
+          PORT: 5175,
+          PREVIEW_PORT: 4175,
+          CONVEX_AGENT_MODE: "anonymous",
+        },
+      },
     ]);
   });
 
@@ -379,5 +387,29 @@ describe("laneRm", () => {
     expect(seen).toEqual([
       ["worktree", "remove", "--force", "F:/work/app-12-login"],
     ]);
+  });
+});
+
+describe("realDeps().run", () => {
+  const exitUnlessBlank = [
+    "-e",
+    "process.exit(process.env.CONVEX_DEPLOYMENT === '' ? 0 : 7)",
+  ];
+
+  it("lets an env override beat a value inherited from the shell", () => {
+    vi.stubEnv("CONVEX_DEPLOYMENT", "dev:inherited-123");
+    try {
+      const { run } = realDeps();
+      const cwd = process.cwd();
+      expect(run(process.execPath, exitUnlessBlank, { cwd })).toBe(7);
+      expect(
+        run(process.execPath, exitUnlessBlank, {
+          cwd,
+          env: { CONVEX_DEPLOYMENT: "" },
+        }),
+      ).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

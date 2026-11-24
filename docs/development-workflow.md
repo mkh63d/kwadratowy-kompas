@@ -96,12 +96,21 @@ Deployment lokalny (beta) nie zużywa limitu, działa na Twojej maszynie i nie w
 Z `--local` skrypt uruchamia w nowym worktree `npx convex dev --once` w trybie anonimowym
 (`CONVEX_AGENT_MODE=anonymous`), tak jak ręczne uruchomienie opisane w „Start środowiska”.
 Komenda tworzy deployment, wgrywa funkcje z `convex/` i zapisuje w `.env.local`
-`CONVEX_DEPLOYMENT=anonymous:anonymous-agent` oraz `VITE_CONVEX_URL`, a skrypt dopisuje `PORT` i
-`PREVIEW_PORT`. Ścieżka lokalna nigdy nie dotyka chmury, także gdy CLI jest zalogowane: skrypt
-czyści dla tej komendy `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_DEPLOYMENT_TOKEN`,
-`CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` i `CONVEX_ALLOW_ANONYMOUS` odziedziczone
-z powłoki, bo CLI wybrałoby wskazany w nich deployment przed trybem anonimowym.
-`npx convex deployment create local` nie działa w trybie anonimowym (patrz [troubleshooting](troubleshooting.md)).
+`CONVEX_DEPLOYMENT=anonymous:anonymous-agent` oraz `VITE_CONVEX_URL`, a skrypt dopisuje `PORT`,
+`PREVIEW_PORT` i `CONVEX_AGENT_MODE=anonymous`. `lane:new --local` nie dotyka chmury, także gdy
+CLI jest zalogowane: skrypt czyści dla tej komendy `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`,
+`CONVEX_DEPLOYMENT_TOKEN`, `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` i
+`CONVEX_ALLOW_ANONYMOUS` odziedziczone z powłoki, bo CLI wybrałoby wskazany w nich deployment przed
+trybem anonimowym. `npx convex deployment create local` nie działa w trybie anonimowym (patrz
+[troubleshooting](troubleshooting.md)).
+
+Później ścieżka zostaje lokalna dzięki `CONVEX_AGENT_MODE=anonymous` w jej `.env.local`. Bez tej
+linii `npm run dev` z zalogowanym CLI pyta, czy podlinkować deployment do konta, a domyślna
+odpowiedź (Enter) to „tak”: CLI tworzy wtedy deployment w chmurze i przepisuje na niego
+`.env.local`. Jeśli chcesz świadomie przenieść ścieżkę do chmury, usuń tę linię. Czyszczenie
+zmiennych dotyczy tylko `lane:new`: zmienna wyeksportowana w powłoce (np. `CONVEX_DEPLOYMENT` albo
+`CONVEX_AGENT_MODE` z inną wartością) przykrywa `.env.local` przy każdym `npm run dev`, więc nie
+eksportuj ich w terminalu, w którym pracujesz na ścieżce lokalnej.
 
 ## Unikanie kolizji
 

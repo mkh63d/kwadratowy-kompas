@@ -320,7 +320,12 @@ export async function laneNew(deps, args) {
     args.local ? LOCAL_CONVEX_ENV : undefined,
   );
 
-  deps.writeEnv(lanePath, { PORT: port, PREVIEW_PORT: previewPort });
+  deps.writeEnv(lanePath, {
+    PORT: port,
+    PREVIEW_PORT: previewPort,
+    // Without it a later `convex dev` with a logged-in CLI offers to link the lane to the cloud (default: yes).
+    ...(args.local ? { CONVEX_AGENT_MODE: "anonymous" } : {}),
+  });
   deps.log(
     `\nLane ${lane} ready: ${lanePath}\n  dev     http://localhost:${port}\n  preview http://localhost:${previewPort}\n  cd ${lanePath}`,
   );
@@ -368,7 +373,7 @@ function probePort(port) {
 }
 
 /** @returns {Deps} */
-function realDeps() {
+export function realDeps() {
   const win = process.platform === "win32";
   return {
     cwd: process.cwd(),
