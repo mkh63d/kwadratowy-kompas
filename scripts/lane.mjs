@@ -1,13 +1,16 @@
 // One-command lanes: a lane is a git worktree with its own ports and Convex deployment (ARCH 8.5).
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { createConnection } from "node:net";
+import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BASE_PORT, BASE_PREVIEW_PORT, readLocalEnv } from "./lib/lane-env.mjs";
 import { CONVEX_BIN, runForOutput } from "./lib/proc.mjs";
 
 export const MAX_LANES = 100;
+/** Default port of a local Convex backend (CLI 1.50 `chooseLocalBackendPorts`); the main checkout keeps it. */
+export const BASE_CONVEX_PORT = 3210;
 
 const NAME_PART = /^[A-Za-z0-9-]+$/;
 const USAGE = `Usage:
@@ -85,24 +88,49 @@ export function deploymentReference({ member, issue, slug }) {
 }
 
 /**
- * First lane number (1, 2, ...) whose two ports are neither reserved by another
- * lane's env file nor in use on this machine. Lane 0 is the main checkout.
+ * @typedef {{
+ *   lane: number, port: number, previewPort: number,
+ *   convexPort: number | null, convexSitePort: number | null,
+ * }} LanePorts
+ */
+
+/**
+ * First lane number (1, 2, ...) whose ports are neither reserved by another lane's env file
+ * nor in use on this machine. Lane 0 is the main checkout. A local lane also needs the two
+ * ports of its own Convex backend (API and HTTP actions site); other lanes get null for them.
  * @param {{
  *   isPortFree: (port: number) => Promise<boolean>,
  *   reserved?: Iterable<number>,
+ *   local?: boolean,
  * }} options
- * @returns {Promise<{ lane: number, port: number, previewPort: number }>}
+ * @returns {Promise<LanePorts>}
  */
-export async function pickLane({ isPortFree, reserved = [] }) {
+export async function pickLane({ isPortFree, reserved = [], local = false }) {
   const taken = new Set(reserved);
   for (let lane = 1; lane <= MAX_LANES; lane++) {
-    const port = BASE_PORT + lane;
-    const previewPort = BASE_PREVIEW_PORT + lane;
-    if (taken.has(port) || taken.has(previewPort)) continue;
-    if ((await isPortFree(port)) && (await isPortFree(previewPort)))
-      return { lane, port, previewPort };
+    const ports = {
+      lane,
+      port: BASE_PORT + lane,
+      previewPort: BASE_PREVIEW_PORT + lane,
+      convexPort: local ? BASE_CONVEX_PORT + 2 * lane : null,
+      convexSitePort: local ? BASE_CONVEX_PORT + 2 * lane + 1 : null,
+    };
+    const needed = [
+      ports.port,
+      ports.previewPort,
+      ports.convexPort,
+      ports.convexSitePort,
+    ].filter((p) => p !== null);
+    if (needed.some((p) => taken.has(p))) continue;
+    if (await allFree(needed, isPortFree)) return ports;
   }
-  throw new Error(`No free lane among the first ${MAX_LANES} port pairs.`);
+  throw new Error(`No free lane among the first ${MAX_LANES} port sets.`);
+}
+
+/** @param {number[]} ports @param {(port: number) => Promise<boolean>} isPortFree */
+async function allFree(ports, isPortFree) {
+  for (const port of ports) if (!(await isPortFree(port))) return false;
+  return true;
 }
 
 /**
@@ -125,6 +153,25 @@ export function upsertEnv(content, values) {
 }
 
 /**
+ * The Convex CLI picks a deployment from these variables before it considers anonymous mode,
+ * so a value inherited from the shell would send a `--local` lane to that (possibly cloud)
+ * deployment. The CLI treats an empty value as unset. `deployment create local` refuses
+ * anonymous mode (CLI 1.50), so `dev --once` is what creates the local deployment.
+ * Agent mode is off on purpose: it names every deployment `anonymous-agent`, while without it
+ * the CLI names it `anonymous-<worktree dir>`. The command runs with a non-TTY stdin, which
+ * makes the CLI choose anonymous mode even when logged in and turns every prompt into an error.
+ */
+export const LOCAL_CONVEX_ENV = {
+  CONVEX_AGENT_MODE: "",
+  CONVEX_ALLOW_ANONYMOUS: "",
+  CONVEX_DEPLOYMENT: "",
+  CONVEX_DEPLOY_KEY: "",
+  CONVEX_DEPLOYMENT_TOKEN: "",
+  CONVEX_SELF_HOSTED_URL: "",
+  CONVEX_SELF_HOSTED_ADMIN_KEY: "",
+};
+
+/**
  * @typedef {{ path: string, branch: string | null }} Worktree
  * @param {string} porcelain output of `git worktree list --porcelain`
  * @returns {Worktree[]}
@@ -143,9 +190,38 @@ export function parseWorktrees(porcelain) {
 }
 
 /**
+ * Where anonymous deployments kept their state before the CLI stored it in the project. CLI 1.50
+ * still prefers this directory for a deployment of the same name in a fresh worktree.
+ * @param {string} home
+ * @param {string} lanePath
+ */
+export function legacyAnonymousStateDir(home, lanePath) {
+  return join(
+    home,
+    ".convex",
+    "anonymous-convex-backend-state",
+    `anonymous-${basename(lanePath)}`,
+  );
+}
+
+/**
+ * Port of a Convex URL that points at a backend on this machine, else null (cloud).
+ * @param {string | undefined} url
+ * @returns {string | null}
+ */
+export function localBackendPort(url) {
+  if (!url || !URL.canParse(url)) return null;
+  const { hostname, port } = new URL(url);
+  return ["127.0.0.1", "localhost"].includes(hostname) && port !== ""
+    ? port
+    : null;
+}
+
+/**
  * @typedef {{
  *   slug: string, path: string, branch: string,
  *   port: string | null, previewPort: string | null, deployment: string | null,
+ *   convexPort: string | null, convexSitePort: string | null,
  * }} Lane
  */
 
@@ -167,6 +243,8 @@ export function toLanes(worktrees, readEnv) {
         port: env.PORT ?? null,
         previewPort: env.PREVIEW_PORT ?? null,
         deployment: env.CONVEX_DEPLOYMENT ?? null,
+        convexPort: localBackendPort(env.VITE_CONVEX_URL),
+        convexSitePort: localBackendPort(env.VITE_CONVEX_SITE_URL),
       },
     ];
   });
@@ -176,12 +254,14 @@ export function toLanes(worktrees, readEnv) {
 export function formatLanes(lanes) {
   if (lanes.length === 0) return "No lanes.";
   const rows = [
-    ["SLUG", "PATH", "PORT", "PREVIEW", "CONVEX DEPLOYMENT"],
+    ["SLUG", "PATH", "PORT", "PREVIEW", "CONVEX PORTS", "CONVEX DEPLOYMENT"],
     ...lanes.map((l) => [
       l.slug,
       l.path,
       l.port ?? "-",
       l.previewPort ?? "-",
+      [l.convexPort, l.convexSitePort].filter((p) => p !== null).join("/") ||
+        "-",
       l.deployment ?? "-",
     ]),
   ];
@@ -214,19 +294,28 @@ export function findLane(slug, lanes) {
 
 /**
  * The Convex CLI has no `deployment delete`: cloud deployments are removed in the dashboard
- * or expire, local ones live inside the worktree. CONVEX_DEPLOYMENT is `local:<name>` for local.
+ * or expire, local ones live inside the worktree. CONVEX_DEPLOYMENT is `local:<name>` or
+ * `anonymous:<name>` (what `lane:new --local` creates) for local. A lane with PORT but no
+ * CONVEX_DEPLOYMENT is a `--local` lane whose creation failed: only `--local` writes its ports
+ * before the Convex step.
  * @param {Lane} lane
  */
 export function deletionHint(lane) {
-  if (lane.deployment?.startsWith("local:"))
-    return `Its data lives in ${join(lane.path, ".convex", "local", "default")} and is removed with the worktree.`;
-  return 'Delete it in the Convex dashboard (Project -> Deployments) or let it expire (created with --expiration "in 7 days").';
+  const local =
+    lane.deployment === null
+      ? lane.port !== null
+      : /^(local|anonymous):/.test(lane.deployment);
+  if (local)
+    return `The local Convex deployment is removed with the worktree (its data lived in ${join(lane.path, ".convex", "local", "default")}).`;
+  return 'The Convex deployment is NOT deleted. Delete it in the Convex dashboard (Project -> Deployments) or let it expire (created with --expiration "in 7 days").';
 }
 
 /**
+ * @typedef {{ cwd: string, env?: Record<string, string>, stdin?: "ignore" }} RunOptions
  * @typedef {{
  *   cwd: string,
- *   run: (command: string, args: string[], options: { cwd: string, env?: Record<string, string> }) => number,
+ *   home: string,
+ *   run: (command: string, args: string[], options: RunOptions) => number,
  *   output: (command: string, args: string[], cwd: string) => string,
  *   isPortFree: (port: number) => Promise<boolean>,
  *   readEnv: (dir: string) => Record<string, string>,
@@ -254,19 +343,28 @@ export async function laneNew(deps, args) {
   const branch = `feat/${name}`;
   const lanePath = resolve(mainPath, "..", `${basename(mainPath)}-${name}`);
   if (existsSync(lanePath)) throw new Error(`${lanePath} already exists.`);
+  const legacyDir = legacyAnonymousStateDir(deps.home, lanePath);
+  if (args.local && existsSync(legacyDir))
+    throw new Error(
+      `${legacyDir} exists, and the Convex CLI would reuse that old deployment for this lane. Move it away or pick another slug.`,
+    );
 
   const reserved = toLanes(worktrees, deps.readEnv).flatMap((l) =>
-    [l.port, l.previewPort].filter((p) => p !== null).map(Number),
+    [l.port, l.previewPort, l.convexPort, l.convexSitePort]
+      .filter((p) => p !== null)
+      .map(Number),
   );
-  const { lane, port, previewPort } = await pickLane({
-    isPortFree: deps.isPortFree,
-    reserved,
-  });
+  const { lane, port, previewPort, convexPort, convexSitePort } =
+    await pickLane({
+      isPortFree: deps.isPortFree,
+      reserved,
+      local: args.local,
+    });
 
   const step = (/** @type {string} */ message) => deps.log(`\n> ${message}`);
-  /** @param {string} command @param {string[]} cmdArgs @param {string} cwd @param {Record<string, string>} [env] */
-  const must = (command, cmdArgs, cwd, env) => {
-    const status = deps.run(command, cmdArgs, { cwd, env });
+  /** @param {string} command @param {string[]} cmdArgs @param {string} cwd @param {Omit<RunOptions, "cwd">} [options] */
+  const must = (command, cmdArgs, cwd, options = {}) => {
+    const status = deps.run(command, cmdArgs, { cwd, ...options });
     if (status !== 0)
       throw new Error(
         `\`${command} ${cmdArgs.join(" ")}\` failed (exit ${status}).`,
@@ -275,17 +373,28 @@ export async function laneNew(deps, args) {
 
   step(`Creating worktree ${lanePath} on ${branch}`);
   must("git", ["worktree", "add", "-b", branch, lanePath], mainPath);
+  const ports = { PORT: port, PREVIEW_PORT: previewPort };
+  // Written before the slow steps so another lane:new reserves these ports, and lane:rm of a
+  // failed --local lane knows it is local. The CLI keeps existing lines when it edits the file.
+  if (args.local) deps.writeEnv(lanePath, ports);
 
   step("Running npm ci (takes a minute or two)");
   must("npm", ["ci"], lanePath);
 
   step(
     args.local
-      ? "Creating local Convex deployment"
+      ? "Creating anonymous local Convex deployment (no account needed)"
       : `Creating Convex deployment ${reference} (expires in 7 days)`,
   );
   const create = args.local
-    ? ["deployment", "create", "local", "--select"]
+    ? [
+        "dev",
+        "--once",
+        "--local-cloud-port",
+        String(convexPort),
+        "--local-site-port",
+        String(convexSitePort),
+      ]
     : [
         "deployment",
         "create",
@@ -300,14 +409,25 @@ export async function laneNew(deps, args) {
     process.execPath,
     [CONVEX_BIN, ...create],
     lanePath,
-    args.local ? { CONVEX_AGENT_MODE: "anonymous" } : undefined,
+    args.local ? { env: LOCAL_CONVEX_ENV, stdin: "ignore" } : {},
   );
 
-  deps.writeEnv(lanePath, { PORT: port, PREVIEW_PORT: previewPort });
-  deps.log(
-    `\nLane ${lane} ready: ${lanePath}\n  dev     http://localhost:${port}\n  preview http://localhost:${previewPort}\n  cd ${lanePath}`,
+  deps.writeEnv(
+    lanePath,
+    args.local
+      ? // Only now: set earlier, a manual `convex dev` in a failed lane would load it from the
+        // file and name the deployment `anonymous-agent`. Without it a later `convex dev` with a
+        // logged-in CLI offers to link the lane to the cloud (default: yes).
+        { CONVEX_AGENT_MODE: "anonymous" }
+      : ports,
   );
-  return { lanePath, branch, port, previewPort };
+  const backend = args.local
+    ? `\n  convex  http://127.0.0.1:${convexPort} (site ${convexSitePort})`
+    : "";
+  deps.log(
+    `\nLane ${lane} ready: ${lanePath}\n  dev     http://localhost:${port}\n  preview http://localhost:${previewPort}${backend}\n  cd ${lanePath}`,
+  );
+  return { lanePath, branch, port, previewPort, convexPort, convexSitePort };
 }
 
 /** @param {Deps} deps */
@@ -336,44 +456,65 @@ export function laneRm(deps, args) {
     );
   deps.log(
     `Removed worktree ${lane.path}. Branch ${lane.branch} is kept (delete it with \`git branch -d ${lane.branch}\` once merged).\n` +
-      `The Convex deployment is NOT deleted. ${deletionHint(lane)}`,
+      deletionHint(lane),
   );
   return lane;
 }
 
-/** @param {number} port @returns {Promise<boolean>} */
-function probePort(port) {
+/**
+ * True when something on this machine accepts connections on the port, over IPv4 or IPv6 loopback.
+ * A test bind is not enough: on Windows binding `::` succeeds next to a listener on `127.0.0.1`,
+ * `0.0.0.0` or `::1`, and each other single-address bind misses some of those. A connect probe
+ * catches all four.
+ * @param {number} port
+ * @param {number} [timeoutMs]
+ * @returns {Promise<boolean>}
+ */
+export async function isPortInUse(port, timeoutMs = 2000) {
+  for (const host of ["127.0.0.1", "::1"])
+    if (await acceptsConnection(port, host, timeoutMs)) return true;
+  return false;
+}
+
+/** A refusal or a missing address family means free; a hang counts as busy. @param {number} port @param {string} host @param {number} timeoutMs */
+function acceptsConnection(port, host, timeoutMs) {
   return new Promise((done) => {
-    const server = createServer();
-    server.once("error", () => done(false));
-    server.listen(port, () => server.close(() => done(true)));
+    const socket = createConnection({ port, host });
+    const finish = (/** @type {boolean} */ busy) => {
+      socket.destroy();
+      done(busy);
+    };
+    socket.setTimeout(timeoutMs, () => finish(true));
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
   });
 }
 
-/** @returns {Deps} */
-function realDeps() {
+/** @param {{ spawn?: typeof spawnSync }} [overrides] @returns {Deps} */
+export function realDeps({ spawn = spawnSync } = {}) {
   const win = process.platform === "win32";
   return {
     cwd: process.cwd(),
-    run: (command, args, { cwd, env }) => {
+    home: homedir(),
+    run: (command, args, { cwd, env, stdin }) => {
       // Node refuses to spawn npm.cmd without a shell; npm_execpath (set under `npm run`) avoids one.
       const npmCli = process.env.npm_execpath;
       const viaNode = command === "npm" && npmCli;
       return (
-        spawnSync(
+        spawn(
           viaNode ? process.execPath : command,
           viaNode ? [npmCli, ...args] : args,
           {
             cwd,
             env: { ...process.env, ...env },
-            stdio: "inherit",
+            stdio: [stdin ?? "inherit", "inherit", "inherit"],
             shell: win && command === "npm" && !npmCli,
           },
         ).status ?? 1
       );
     },
     output: runForOutput,
-    isPortFree: probePort,
+    isPortFree: async (port) => !(await isPortInUse(port)),
     readEnv: readLocalEnv,
     writeEnv: (dir, values) => {
       const file = join(dir, ".env.local");

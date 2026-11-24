@@ -1,10 +1,10 @@
 # Codzienny przepływ pracy
 
-Jak pracować w 24 godziny w pięć osób, z kilkoma równoległymi ścieżkami (lanes) na osobę. Zasady
+Jak pracować w zespole, z kilkoma równoległymi ścieżkami (lanes) na osobę. Zasady
 zespołu (gałęzie, commity, recenzje) są w [CONTRIBUTING.md](../CONTRIBUTING.md), a budowa kodu w
 [architecture.md](architecture.md). Tu jest rytm pracy i narzędzia, które zapobiegają kolizjom.
 
-## Tryb „light hackathon”
+## Przepływ pracy nad funkcją
 
 Bez ceremonii, ale z jedną kartką specyfikacji na funkcję:
 
@@ -14,8 +14,6 @@ Bez ceremonii, ale z jedną kartką specyfikacji na funkcję:
 3. Zaimplementuj ją w `src/features/<nazwa>/` i `convex/<nazwa>/`.
 4. Osobny recenzent (agent albo człowiek) sprawdza diff względem kryteriów akceptacji.
 5. `npm run verify`, potem PR z `Closes #<nr>`.
-
-Pierwszego dnia, przed pierwszą linijką kodu, przejdź przez [SETUP_PROMPT.md](../SETUP_PROMPT.md).
 
 ## Start środowiska
 
@@ -31,12 +29,18 @@ npm run dev                       # Convex + Vite, gdy Convex jest skonfigurowan
 Backend Convex bez konta (lokalny, anonimowy):
 
 ```bash
-CONVEX_AGENT_MODE=anonymous npx convex dev --once
+node -e "require('fs').appendFileSync('.env.local', '\nCONVEX_AGENT_MODE=anonymous\n')"
+npx convex dev --once
 ```
 
-W PowerShellu: `$env:CONVEX_AGENT_MODE='anonymous'; npx convex dev --once`. Pierwsze uruchomienie
-`npx convex dev` z kontem zapisuje `VITE_CONVEX_URL` do `.env.local`. Brak tej zmiennej to tryb
-offline: aplikacja działa, a na górze widać baner.
+Obie komendy działają tak samo w Bashu i w PowerShellu (`echo … >> .env.local` w Windows
+PowerShell 5.1 zapisałby plik w UTF-16, którego CLI nie odczyta). Linia w `.env.local` zostaje na
+stałe: CLI czyta ją przy każdym `npx convex dev`, więc `npm run dev` z
+zalogowanym CLI nie proponuje podlinkowania deploymentu do chmury (domyślna odpowiedź na to pytanie
+to „tak”). Sama zmienna w powłoce znika razem z nią. Szczegóły:
+[README](../README.md#lokalny-backend-convex). Pierwsze uruchomienie `npx convex dev`, z kontem
+albo bez, zapisuje `VITE_CONVEX_URL` do `.env.local`. Brak tej zmiennej to tryb offline: aplikacja
+działa, a na górze widać baner.
 
 ## Ścieżki (lanes)
 
@@ -67,10 +71,18 @@ Szczegóły działania:
 - Porty są liczone **na maszynę**: zderzają się tylko procesy na tym samym komputerze. Dwie osoby
   mogą obie mieć ścieżkę 1 na swoich laptopach. Vite ma `strictPort`, więc zajęty port kończy się
   jawnym błędem, a nie cichą zmianą portu.
-- `lane:list` pokazuje worktree na gałęziach `feat/*` razem z portami i deploymentem.
+- **Twórz ścieżki po jednej.** Skrypt rezerwuje porty ścieżki dopiero wtedy, gdy zapisze je w jej
+  `.env.local`. Dwa `lane:new` uruchomione naraz mogą więc wybrać ten sam numer ścieżki. Ścieżka
+  lokalna, która przegra, kończy się po `npm ci` błędem `Requested port … is not available`; usuń
+  ją (`lane:rm --force`, `git branch -D`) i utwórz jeszcze raz. Uruchom kolejne `lane:new`, gdy
+  poprzednie się skończy. `npm run dev` w wielu ścieżkach naraz jest w porządku.
+- `lane:list` pokazuje worktree na gałęziach `feat/*` razem z portami i deploymentem. Kolumna
+  `CONVEX PORTS` to porty lokalnego backendu Convex (`API/site`, odczytane z `VITE_CONVEX_URL` i
+  `VITE_CONVEX_SITE_URL`); ścieżki w chmurze mają tam `-`.
 - `lane:rm` usuwa worktree, ale **zostawia gałąź** (usuń ją `git branch -d`, gdy PR jest scalony)
-  i **nie usuwa deploymentu Convex**. CLI Convex 1.50 nie ma komendy `deployment delete`: usuń
-  deployment w panelu Convex (Project → Deployments) albo poczekaj, aż wygaśnie po 7 dniach.
+  i **nie usuwa deploymentu Convex w chmurze**. CLI Convex 1.50 nie ma komendy `deployment delete`:
+  usuń deployment w panelu Convex (Project → Deployments) albo poczekaj, aż wygaśnie po 7 dniach.
+  Deployment lokalny (`--local`) znika razem z worktree.
   Niezacommitowane zmiany blokują usunięcie, wymusza je `--force`.
 - Raporty testów (`reports/`, `coverage/`) lądują w katalogu worktree, więc ścieżki ich nie
   nadpisują.
@@ -79,7 +91,7 @@ Szczegóły działania:
 
 Plan darmowy Convex dopuszcza do 6 developerów i 40 deploymentów na zespół
 ([cennik](https://www.convex.dev/pricing), [limity](https://docs.convex.dev/production/state/limits)).
-Każda ścieżka z deploymentem w chmurze to jeden z nich. Szacunkowo: pięć osób, produkcja i
+Każda ścieżka z deploymentem w chmurze to jeden z nich. Przykładowo: pięć osób, produkcja i
 około 25 ścieżek to ok. 31 deploymentów. Mieści się to w 40 tylko wtedy, gdy skończone ścieżki
 znikają albo wygasają. Stąd domyślne 7 dni.
 Opis wielu deploymentów: [Convex, multiple deployments](https://docs.convex.dev/production/multiple-deployments).
@@ -94,9 +106,56 @@ Deployment lokalny (beta) nie zużywa limitu, działa na Twojej maszynie i nie w
 ([dokumentacja](https://docs.convex.dev/cli/local-deployments)). Jego dane leżą w worktree, w
 `<ścieżka>/.convex/local/default`, więc znikają razem z nim. Nie widać ich z innej maszyny.
 
+Z `--local` skrypt uruchamia w nowym worktree
+`npx convex dev --once --local-cloud-port <API> --local-site-port <site>` bez terminala na
+wejściu (stdin nie jest TTY). Komenda tworzy deployment anonimowy, wgrywa funkcje z `convex/` i
+zapisuje w `.env.local` `CONVEX_DEPLOYMENT=anonymous:anonymous-<katalog worktree>` (np.
+`anonymous:anonymous-kwadratowy-kompas-12-login`), `VITE_CONVEX_URL` i `VITE_CONVEX_SITE_URL`.
+`PORT` i `PREVIEW_PORT` skrypt zapisuje wcześniej, zaraz po utworzeniu worktree, jeszcze przed
+`npm ci`. Dzięki temu `lane:rm` ścieżki, której tworzenie się nie udało, wie, że była lokalna.
+`CONVEX_AGENT_MODE=anonymous` dopisuje dopiero po udanym utworzeniu deploymentu. Gdyby ta linia
+była w pliku wcześniej, ręczne dokończenie nieudanej ścieżki (patrz
+[troubleshooting](troubleshooting.md)) wczytałoby ją z `.env.local` i nazwało deployment
+`anonymous-agent`.
+
+Każda ścieżka lokalna ma więc własny backend: własną nazwę deploymentu i własne porty. Ścieżka N
+dostaje porty `3210 + 2N` (API) i `3211 + 2N` (HTTP actions): ścieżka 1 to `3212`/`3213`,
+ścieżka 2 to `3214`/`3215`. Główny checkout zostaje na domyślnych `3210`/`3211`. Skrypt wybiera
+je tak jak `PORT` i `PREVIEW_PORT`: pomija porty innych ścieżek (z ich `.env.local`) oraz porty,
+na których coś na tej maszynie przyjmuje połączenia przez `127.0.0.1` albo `::1`. CLI
+zapisuje porty w `<ścieżka>/.convex/local/default/config.json` i przy każdym następnym
+`npm run dev` próbuje najpierw ich, więc ścieżka zostaje na swoich portach. Dzięki temu kilka
+ścieżek może mieć jednocześnie uruchomione `npm run dev`. Jeśli zapisany port jest zajęty, CLI nie
+zgłasza błędu, tylko bierze pierwszy wolny od `3210` i zapisuje go jako nowy port ścieżki (patrz
+[troubleshooting](troubleshooting.md)).
+
+Przy tworzeniu skrypt celowo nie ustawia `CONVEX_AGENT_MODE`. W tym trybie CLI 1.50 nazywa każdy
+deployment `anonymous-agent`, więc wszystkie ścieżki miałyby tę samą nazwę. Bez niego CLI nazywa
+deployment od katalogu. Tryb anonimowy wybiera wtedy dlatego, że wejście nie jest terminalem, także
+gdy CLI jest zalogowane. Każde pytanie CLI kończy się w tej sytuacji błędem, a nie domyślną
+odpowiedzią.
+
+`lane:new --local` nie dotyka chmury, także gdy CLI jest zalogowane: skrypt czyści dla tej komendy
+`CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_DEPLOYMENT_TOKEN`, `CONVEX_SELF_HOSTED_URL`,
+`CONVEX_SELF_HOSTED_ADMIN_KEY`, `CONVEX_ALLOW_ANONYMOUS` i `CONVEX_AGENT_MODE` odziedziczone z
+powłoki, bo CLI wybrałoby wskazany w nich deployment przed trybem anonimowym. Skrypt nie utworzy
+ścieżki, jeśli w katalogu domowym leży stary stan deploymentu o tej samej nazwie
+(`~/.convex/anonymous-convex-backend-state/anonymous-<katalog worktree>`, zostawiany przez starsze
+wersje CLI): CLI użyłoby go zamiast nowego katalogu w worktree, a dane nie zniknęłyby razem z
+nim. `npx convex deployment create local` nie działa w trybie anonimowym (patrz
+[troubleshooting](troubleshooting.md)).
+
+Później ścieżka zostaje lokalna dzięki `CONVEX_AGENT_MODE=anonymous` w jej `.env.local`. Bez tej
+linii `npm run dev` z zalogowanym CLI pyta, czy podlinkować deployment do konta, a domyślna
+odpowiedź (Enter) to „tak”: CLI tworzy wtedy deployment w chmurze i przepisuje na niego
+`.env.local`. Jeśli chcesz świadomie przenieść ścieżkę do chmury, usuń tę linię. Czyszczenie
+zmiennych dotyczy tylko `lane:new`: zmienna wyeksportowana w powłoce (np. `CONVEX_DEPLOYMENT` albo
+`CONVEX_AGENT_MODE` z inną wartością) przykrywa `.env.local` przy każdym `npm run dev`, więc nie
+eksportuj ich w terminalu, w którym pracujesz na ścieżce lokalnej.
+
 ## Unikanie kolizji
 
-Bez zabezpieczeń pięć osób z kilkoma ścieżkami będzie zmieniać te same pliki.
+Bez zabezpieczeń kilka osób z kilkoma ścieżkami będzie zmieniać te same pliki.
 
 ### 1. Funkcje dodają pliki
 
@@ -188,8 +247,9 @@ git add convex/_generated
 ```
 
 **`npm run codegen:check`** uruchamia `convex codegen` i kończy się błędem, gdy `convex/_generated`
-różni się od zacommitowanego. Wymaga skonfigurowanego deploymentu (wystarczy
-`npx convex dev --once`), więc to kontrola lokalna i w ścieżkach, a nie w CI. Po dodaniu albo
+różni się od zacommitowanego. Wymaga skonfigurowanego deploymentu (z kontem
+wystarczy `npx convex dev --once`, bez konta przepis z
+[README](../README.md#lokalny-backend-convex) z linią `CONVEX_AGENT_MODE=anonymous` w `.env.local`), więc to kontrola lokalna i w ścieżkach, a nie w CI. Po dodaniu albo
 usunięciu pliku w `convex/` zawsze regeneruj kod i commituj go razem ze zmianą. Zmiany w `convex/`
 nie idą równolegle z innymi zmianami plików w `convex/`.
 

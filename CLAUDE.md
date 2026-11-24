@@ -14,13 +14,13 @@ and the README. This file does not repeat them, it says what you must do and nev
 - [docs/github-issues-workflow.md](docs/github-issues-workflow.md): issues, branches, PRs.
 - [docs/deployment.md](docs/deployment.md): Convex + Vercel deploy.
 - [docs/troubleshooting.md](docs/troubleshooting.md): common failures.
-- [SETUP_PROMPT.md](SETUP_PROMPT.md): first-run prompt for an agent.
 
 ## Overview
 
-A hackathon starter: Vite + React + TypeScript + Tailwind frontend, Convex backend, one example
-feature ("notes") with an AI summarize action. A team of ~5 builds an MVP in 24 h, often with
-several parallel lanes (git worktrees).
+Kwadratowy Kompas will aggregate opportunities in Łódź: Convex backend, Vite + React + TypeScript +
+Tailwind frontend, with Vercel as the planned host. Target, not built yet: AI extracts opportunities
+from sources and a human moderator approves them before publication. Work often runs in several
+parallel lanes (git worktrees).
 
 ## Language
 
@@ -75,7 +75,7 @@ say so instead of claiming it passed.
 
 ## Convex
 
-- Local backend without an account: `CONVEX_AGENT_MODE=anonymous npx convex dev --once`.
+- Local backend without an account: add `CONVEX_AGENT_MODE=anonymous` to `.env.local`, then `npx convex dev --once`. Keep the line: without it a logged-in CLI offers to link the deployment to the cloud (default yes).
   Cloud lanes (`npm run lane:new`) need a logged-in Convex CLI; `--local` lanes do not.
 - After adding or removing a file under `convex/`, regenerate (`npx convex codegen` with a
   configured deployment) and run `npm run codegen:check`. `convex/_generated/` is committed.
@@ -85,7 +85,7 @@ say so instead of claiming it passed.
 ## AI provider rules
 
 - The provider is chosen only by Convex env: `npx convex env set AI_PROVIDER <mock|openai-compatible>`.
-  `mock` is the default and the demo safety net; keep it working.
+  `mock` is the default and the safety net when a real provider fails; keep it working.
 - Never put AI keys in `VITE_*` variables or `.env.local`. Keys go to Convex env only.
 - No automatic fallback between real providers; failures return typed errors and the UI stays usable.
 - Details: [docs/ai-providers.md](docs/ai-providers.md).
@@ -116,7 +116,7 @@ Do not change structure, dependencies or contracts ad hoc. Propose it in an issu
 get the team's agreement, update [specs/starter-architecture.md](specs/starter-architecture.md) in a
 contract PR, then build on it.
 
-## Light hackathon mode
+## Feature workflow
 
 For a feature: write a one-page spec in `specs/<feature>.md` (scope, acceptance criteria) →
 implement it in `src/features/<name>/` + `convex/<name>/` → have a separate reviewer subagent

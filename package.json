@@ -1,9 +1,9 @@
 {
-  "name": "hacknation-starter",
+  "name": "kwadratowy-kompas",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=24.15.0 <25",
     "npm": ">=10"
@@ -21,7 +21,6 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "seed": "convex run notes/seed:run",
     "lane:new": "node scripts/lane.mjs new",
     "lane:list": "node scripts/lane.mjs list",
     "lane:rm": "node scripts/lane.mjs rm",

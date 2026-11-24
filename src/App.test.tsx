@@ -2,11 +2,6 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
-vi.mock("convex/react", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("convex/react")>()),
-  useQuery: () => [],
-}));
-
 describe("App", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -16,7 +11,7 @@ describe("App", () => {
     vi.stubEnv("VITE_CONVEX_URL", "");
     render(<App />);
     expect(
-      screen.getByRole("heading", { level: 1, name: "HackNation Starter" }),
+      screen.getByRole("heading", { level: 1, name: "Kwadratowy Kompas" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Tryb offline/)).toBeInTheDocument();
   });

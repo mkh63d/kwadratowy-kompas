@@ -60,7 +60,7 @@ Poniższa lista to ścieżka ręczna, na wypadek gdyby skrypt nie zadziałał.
 1. Zaloguj się: `npx convex login`, utwórz projekt (np. przez `npx convex dev`, który zapisze `CONVEX_DEPLOYMENT` w `.env.local`).
 2. W [panelu Convex](https://dashboard.convex.dev/) otwórz deployment **produkcyjny**, wejdź na stronę _Deployment Settings_, kartę _General_, i kliknij _Generate Production Deploy Key_. Przy ustawianiu uprawnień klucza włącz `deployment:deploy` ([Convex: Using Convex with Vercel](https://docs.convex.dev/production/hosting/vercel)).
 3. Klucz ma postać `prod:<nazwa-deploymentu>|<token>`. Użyj klucza produkcyjnego, nie deweloperskiego: `convex deploy` z kluczem deweloperskim wdroży funkcje na deployment deweloperski, a nie na produkcję, więc front dostałby adres złego backendu.
-4. Ustaw zmienne backendu na deploymentcie produkcyjnym (nie ma ich w `.env.local` ani w GitHubie): `npx convex env set AI_PROVIDER mock --prod`. Pełna lista i ścieżki dostawców: [ai-providers.md](ai-providers.md). `mock` jest bezpieczną wartością domyślną na demo.
+4. Ustaw zmienne backendu na deploymentcie produkcyjnym (nie ma ich w `.env.local` ani w GitHubie): `npx convex env set AI_PROVIDER mock --prod`. Pełna lista i ścieżki dostawców: [ai-providers.md](ai-providers.md). `mock` jest bezpieczną wartością domyślną.
 
 ### 2. Vercel: projekt i trzy identyfikatory
 
@@ -158,7 +158,7 @@ Sentry SDK 11 domyślnie zbiera prawie wszystko (dane użytkownika i jego adres 
 - w treści komunikatów dodatkowo: wszystko po `Bearer ` oraz reszta linii po `prompt:`, `token=`, `password:` i podobnych (`apiKey`, `authorization`, `secret`, `credential`, `cookie`);
 - wszystkie breadcrumbs z konsoli, bo logi mogą zawierać prompty albo odpowiedzi modelu.
 
-**Komunikaty błędów lecą do Sentry prawie tak, jak je rzucisz.** Filtr rozpoznaje tylko pary `klucz=wartość` z wrażliwym kluczem po `?`, `&`, `;` lub `#`, `Bearer <token>` i fragmenty typu `prompt: ...` lub `token=...` (resztę takiej linii zastępuje), a w błędach walidacji Convex ucina tekst od linii `Value:`, bo tam wraca odrzucona wartość. Komunikaty dłuższe niż 8192 znaki są ucinane przed filtrowaniem (ogon znika, nie jest wysyłany). Gołe słowa bez klucza (`Invalid token abc123`, cytowany prompt) zostają. Dowolnego tekstu użytkownika wstawionego do `throw new Error(...)` nie da się rozpoznać, więc nie wkładaj tam promptów ani treści notatek.
+**Komunikaty błędów lecą do Sentry prawie tak, jak je rzucisz.** Filtr rozpoznaje tylko pary `klucz=wartość` z wrażliwym kluczem po `?`, `&`, `;` lub `#`, `Bearer <token>` i fragmenty typu `prompt: ...` lub `token=...` (resztę takiej linii zastępuje), a w błędach walidacji Convex ucina tekst od linii `Value:`, bo tam wraca odrzucona wartość. Komunikaty dłuższe niż 8192 znaki są ucinane przed filtrowaniem (ogon znika, nie jest wysyłany). Gołe słowa bez klucza (`Invalid token abc123`, cytowany prompt) zostają. Dowolnego tekstu użytkownika wstawionego do `throw new Error(...)` nie da się rozpoznać, więc nie wkładaj tam promptów ani treści wpisanych przez użytkowników.
 
 Zasady są pokryte testami w `src/lib/sentry.test.ts`. Jeśli dodajesz do zdarzeń własne dane (`Sentry.setContext` i podobne), trzymaj je pod kluczami, które filtr rozpoznaje, albo rozszerz wyrażenie w `sentry.ts`.
 

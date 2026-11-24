@@ -77,13 +77,13 @@ Pliki mają być w UTF-8 bez BOM. Polecenia PowerShella `Set-Content` i `Out-Fil
 
 ## Baner „Tryb offline”: Convex nie jest skonfigurowany
 
-**Objaw:** na górze strony widać „Tryb offline: backend Convex nie jest skonfigurowany”, a zapis notatek i podsumowanie są wyłączone.
+**Objaw:** na górze strony widać „Tryb offline: backend Convex nie jest skonfigurowany”, a funkcje, które potrzebują backendu, nie działają.
 
 **Przyczyna:** aplikacja nie ma `VITE_CONVEX_URL`, więc nie tworzy klienta Convex. To zamierzony tryb startowy, nie błąd: dzięki niemu starter działa bez konta, a smoke e2e nie potrzebuje sieci.
 
 **Co zrobić:**
 
-- Lokalnie: `npm run dev` (uruchamia `convex dev`, który zapisuje `CONVEX_DEPLOYMENT` i `VITE_CONVEX_URL` w `.env.local`). Bez konta: `CONVEX_AGENT_MODE=anonymous npx convex dev --once` albo ustawienie tej zmiennej przed `npm run dev`.
+- Lokalnie z kontem Convex (`npx convex login`): `npm run dev` (uruchamia `convex dev`, który zapisuje `CONVEX_DEPLOYMENT` i `VITE_CONVEX_URL` w `.env.local`). Bez konta: dopisz do `.env.local` linię `CONVEX_AGENT_MODE=anonymous` i uruchom `npx convex dev --once` (przepis w [README](../README.md#lokalny-backend-convex)). Zostaw tę linię w pliku: zmienna ustawiona tylko w powłoce znika, a wtedy `npm run dev` z zalogowanym CLI proponuje podlinkowanie deploymentu do chmury z domyślną odpowiedzią „tak”.
 - Po wdrożeniu: baner na produkcji znaczy, że build powstał bez adresu Convex. Zajrzyj do [deployment.md](deployment.md) (strażnik w `deploy.yml` i zakaz ustawiania `VITE_CONVEX_URL` w Vercelu).
 - Sprawdź, że `.env.local` nie ma pustego `VITE_CONVEX_URL=` po ręcznej edycji. Pusta wartość oznacza „offline”.
 
@@ -93,7 +93,47 @@ Pliki mają być w UTF-8 bez BOM. Polecenia PowerShella `Set-Content` i `Out-Fil
 
 **Przyczyna:** generowanie kodu Convex łączy się z deploymentem (typy zależą od schematu). Bez `CONVEX_DEPLOYMENT` w `.env.local` nie ma do czego się połączyć.
 
-**Co zrobić:** skonfiguruj deployment (`npx convex dev --once`, lokalnie bez konta: `CONVEX_AGENT_MODE=anonymous npx convex dev --once`), potem `npx convex codegen` i `npm run codegen:check`. Wygenerowane pliki są w repozytorium, więc commituj je razem ze zmianą w `convex/`. Zmiany w `convex/` nie idą równolegle z innymi zmianami w tym katalogu (patrz [development-workflow.md](development-workflow.md)).
+**Co zrobić:** skonfiguruj deployment (`npx convex dev --once`; lokalnie bez konta najpierw dopisz do `.env.local` linię `CONVEX_AGENT_MODE=anonymous`, patrz [README](../README.md#lokalny-backend-convex)), potem `npx convex codegen` i `npm run codegen:check`. Wygenerowane pliki są w repozytorium, więc commituj je razem ze zmianą w `convex/`. Zmiany w `convex/` nie idą równolegle z innymi zmianami w tym katalogu (patrz [development-workflow.md](development-workflow.md)).
+
+## `lane:new --local`: „Cannot create a deployment in anonymous mode”
+
+**Objaw:** `npm run lane:new -- <osoba> <nr-issue> <slug> --local` tworzy worktree i robi `npm ci`, a potem kończy się błędem ``Cannot create a deployment in anonymous mode. Run `npx convex login` and configure a project first.``, a skrypt dodaje ``… deployment create local --select` failed (exit 1).``
+
+**Przyczyna:** starsza wersja skryptu tworzyła deployment lokalny komendą `npx convex deployment create local`, a CLI Convex 1.50 odrzuca ją w trybie anonimowym (`CONVEX_AGENT_MODE=anonymous`).
+
+**Co zrobić:**
+
+- Zaktualizuj gałąź: obecny `lane:new --local` używa `npx convex dev --once` i nie wymaga `npx convex login`.
+- Worktree z nieudanej próby już istnieje, więc ponowne `lane:new` zgłosi, że katalog istnieje. Najprościej go usunąć (`npm run lane:rm -- <nr-issue>-<slug> --force`, potem `git branch -D feat/<nr-issue>-<slug>`) i uruchomić `lane:new` jeszcze raz: skrypt sam pilnuje, żeby deployment powstał lokalnie, pod własną nazwą i na własnych portach.
+- Jeśli wolisz dokończyć go ręcznie:
+  1. Sprawdź, że w powłoce nie jest ustawiona żadna z `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_DEPLOYMENT_TOKEN`, `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY`, `CONVEX_AGENT_MODE` ani `CONVEX_ALLOW_ANONYMOUS=false`. Inaczej CLI użyje wskazanego w nich deploymentu, także w chmurze, albo (przy `CONVEX_AGENT_MODE=anonymous`) nazwie deployment `anonymous-agent`, jak w każdej innej ścieżce. Skrypt nie zapisuje `CONVEX_AGENT_MODE` w `.env.local` nieudanej ścieżki, więc nie dopisuj tej linii przed krokiem 4.
+  2. Odczytaj numer ścieżki N z `npm run lane:list`. Obecny skrypt zapisuje `PORT` i `PREVIEW_PORT` od razu po utworzeniu worktree, więc ścieżka ma już w tabeli `PORT` = `5173 + N`. Jeśli w kolumnie `PORT` jest `-` (starsza wersja skryptu), wybierz N, którego nie używa żadna ścieżka. Porty Convex to `3210 + 2N` i `3211 + 2N`.
+  3. W katalogu ścieżki uruchom `npm ci`, jeśli to on się nie udał. Potem uruchom CLI z wejściem, które nie jest terminalem (wtedy wybiera tryb anonimowy, nawet gdy jest zalogowane, i nie zadaje pytań). Bash: `npx convex dev --once --local-cloud-port <3210+2N> --local-site-port <3211+2N> < /dev/null`. PowerShell: `cmd /c "npx convex dev --once --local-cloud-port <3210+2N> --local-site-port <3211+2N> < NUL"`.
+  4. Dopisz do `.env.local` linię `CONVEX_AGENT_MODE=anonymous`, a jeśli w kroku 2 kolumna `PORT` miała `-`, także `PORT=<5173+N>` i `PREVIEW_PORT=<4173+N>`. Bez `CONVEX_AGENT_MODE` `npm run dev` z zalogowanym CLI zaproponuje podlinkowanie ścieżki do chmury z domyślną odpowiedzią „tak” (patrz [development-workflow.md](development-workflow.md)).
+  5. Sprawdź wynik w `npm run lane:list`: ścieżka ma mieć swoje porty i `anonymous:anonymous-<katalog worktree>`.
+- Nie loguj się do Convex tylko po to, żeby obejść ten błąd: deployment lokalny nie potrzebuje konta.
+
+## Dwie ścieżki `--local` walczą o backend Convex
+
+**Objaw:** `npm run dev` w ścieżce lokalnej kończy się błędem `A local backend is still running on port 3210. Please stop it and run this command again.`, albo ścieżka nagle łączy się z backendem na innym porcie niż wcześniej (kolumna `CONVEX PORTS` w `npm run lane:list` się zmieniła).
+
+**Przyczyna:**
+
+- Ścieżki utworzone przed wprowadzeniem osobnych portów mają deployment `anonymous:anonymous-agent` na porcie `3210`. Dwie takie ścieżki mają tę samą nazwę i ten sam port, więc druga uznaje backend pierwszej za swój, czeka 5 sekund i się poddaje.
+- CLI przy `npm run dev` próbuje najpierw portów zapisanych w `.convex/local/default/config.json`. Jeśli któryś jest zajęty (inny program, zapomniany backend), CLI bez ostrzeżenia bierze pierwszy wolny port od `3210` i zapisuje go jako nowy port ścieżki. Może to być port przydzielony innej, akurat zatrzymanej ścieżce.
+
+**Co zrobić:**
+
+- Starą ścieżkę `anonymous-agent` usuń i utwórz od nowa: wypchnij albo zapisz zmiany, potem `npm run lane:rm -- <nr-issue>-<slug> --force`, `git branch -D feat/<nr-issue>-<slug>` i `npm run lane:new -- … --local`. Dane lokalnego deploymentu przepadają razem z worktree.
+- Gdy port się przesunął, zatrzymaj proces na porcie ścieżki (`Get-NetTCPConnection -LocalPort <port> | Select-Object OwningProcess`, macOS i Linux: `lsof -i :<port>`) i przywróć jej porty jednorazowo: w katalogu ścieżki `npx convex dev --once --local-cloud-port <API> --local-site-port <site>` z portami ścieżki (`3210 + 2N`, `3211 + 2N`). CLI zapisze je znowu w `config.json` i `.env.local`.
+
+## `lane:new --local`: „…anonymous-convex-backend-state… exists”
+
+**Objaw:** `npm run lane:new -- … --local` kończy się od razu, jeszcze przed `git worktree add`, komunikatem `<katalog domowy>/.convex/anonymous-convex-backend-state/anonymous-<katalog worktree> exists, and the Convex CLI would reuse that old deployment for this lane.`
+
+**Przyczyna:** starsze wersje CLI Convex trzymały deploymenty anonimowe w katalogu domowym. CLI 1.50 nadal woli taki katalog, jeśli ma tę samą nazwę co nowy deployment, a w worktree nie ma jeszcze `.convex/local/default/config.json`. Ścieżka korzystałaby wtedy ze starych danych spoza worktree, a `lane:rm` by ich nie usunęło.
+
+**Co zrobić:** jeśli stare dane nie są potrzebne, przenieś albo usuń wskazany katalog i uruchom `lane:new` jeszcze raz. Możesz też wybrać inny slug.
 
 ## Playwright: brakuje przeglądarek
 

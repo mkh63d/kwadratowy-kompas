@@ -19,7 +19,7 @@ recenzje i praca równoległa.
 
 - **Przypisanie = rezerwacja.** Issue przypisuje sobie człowiek (nie agent). Zanim ktoś zacznie,
   sprawdza, czy issue nie ma już właściciela.
-- Nazwa gałęzi: `feat|fix|chore/<nr>-<slug>`, np. `feat/12-login`, `fix/31-notes-empty-state`.
+- Nazwa gałęzi: `feat|fix|chore/<nr>-<slug>`, np. `feat/12-login`, `fix/31-search-empty-state`.
 - Nie twórz, nie zamykaj issue i nie zmieniaj etykiet ani milestone'ów bez uzgodnienia z zespołem.
   Komentować wolno zawsze.
 - Po skończeniu napisz w issue komentarz z wynikiem (co zrobione, jak sprawdzone).
@@ -33,7 +33,7 @@ Szczegóły: [docs/github-issues-workflow.md](docs/github-issues-workflow.md).
 - `feat:` nowa funkcja, `fix:` poprawka błędu, `chore:` porządki i konfiguracja,
 - `refactor:`, `test:`, `ci:`, `docs:`.
 
-Przykład: `feat(notes): add summarize button`. Zmiana pliku wspólnego dostaje typ
+Przykład: `feat(search): add category filter`. Zmiana pliku wspólnego dostaje typ
 `feat(contract): …`.
 
 ## Przepływ PR
@@ -77,7 +77,7 @@ squash i rebase przed scaleniem.
 
 ## Praca równoległa
 
-Pięć osób, każda z kilkoma ścieżkami (lanes), szybko zaczyna zmieniać te same pliki. Żeby do tego
+Kilka osób, każda z kilkoma ścieżkami (lanes), szybko zaczyna zmieniać te same pliki. Żeby do tego
 nie dochodziło:
 
 - **Foldery funkcji.** Funkcja dodaje pliki, nie edytuje cudzych: `src/features/<nazwa>/` (z
@@ -95,7 +95,7 @@ nie dochodziło:
   czy istnieje w rejestrze pod tą nazwą, licencja OSI, czy jest utrzymywany, czy nie ma znanych
   podatności, i krótko uzgodnij z zespołem.
 - **Agent** proponuje nową zależność i czeka na zgodę. Nie robi `npm install` w gałęzi funkcji.
-- **Schemat tylko addytywnie** w trakcie hackathonu: nowe tabele i nowe pola opcjonalne. Zmiana
+- **Schemat tylko addytywnie**: nowe tabele i nowe pola opcjonalne. Zmiana
   nazwy lub usunięcie pola to zmiana kontraktowa.
 - **Krótkie PR-y**: celuj w mniej niż ok. 4 godziny pracy na PR. Co kilka godzin i przed otwarciem
   PR-a: `git fetch && git rebase origin/main`.

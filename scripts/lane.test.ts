@@ -1,3 +1,8 @@
+import type { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer, type AddressInfo, type Server } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   deletionHint,
@@ -6,9 +11,13 @@ import {
   formatLanes,
   laneNew,
   laneRm,
+  legacyAnonymousStateDir,
+  localBackendPort,
   parseArgs,
   parseWorktrees,
+  isPortInUse,
   pickLane,
+  realDeps,
   toLanes,
   upsertEnv,
 } from "./lane.mjs";
@@ -92,7 +101,43 @@ describe("pickLane", () => {
       lane: 1,
       port: 5174,
       previewPort: 4174,
+      convexPort: null,
+      convexSitePort: null,
     });
+  });
+
+  it("gives a local lane its own Convex backend ports above the default 3210/3211", async () => {
+    await expect(
+      pickLane({ isPortFree: () => Promise.resolve(true), local: true }),
+    ).resolves.toEqual({
+      lane: 1,
+      port: 5174,
+      previewPort: 4174,
+      convexPort: 3212,
+      convexSitePort: 3213,
+    });
+  });
+
+  it("skips a local lane whose Convex port is busy or reserved", async () => {
+    const busy = new Set([3213]);
+    await expect(
+      pickLane({
+        isPortFree: (p: number) => Promise.resolve(!busy.has(p)),
+        reserved: [3214],
+        local: true,
+      }),
+    ).resolves.toMatchObject({
+      lane: 3,
+      convexPort: 3216,
+      convexSitePort: 3217,
+    });
+  });
+
+  it("ignores Convex ports for cloud lanes", async () => {
+    const busy = new Set([3212, 3213]);
+    await expect(
+      pickLane({ isPortFree: (p: number) => Promise.resolve(!busy.has(p)) }),
+    ).resolves.toMatchObject({ lane: 1 });
   });
 
   it("skips lanes with a busy dev or preview port", async () => {
@@ -169,8 +214,34 @@ describe("lanes", () => {
         port: "5174",
         previewPort: "4174",
         deployment: "dev:happy-fox-123 # team: t, project: p",
+        convexPort: null,
+        convexSitePort: null,
       },
     ]);
+  });
+
+  it("reads a local lane's Convex backend ports from its URLs", () => {
+    const [lane] = toLanes(parseWorktrees(PORCELAIN), () => ({
+      CONVEX_DEPLOYMENT: "anonymous:anonymous-app-12-login",
+      VITE_CONVEX_URL: "http://127.0.0.1:3212",
+      VITE_CONVEX_SITE_URL: "http://127.0.0.1:3213",
+    }));
+    expect(lane).toMatchObject({ convexPort: "3212", convexSitePort: "3213" });
+    const out = formatLanes(lane ? [lane] : []);
+    expect(out.split("\n")[0]).toContain("CONVEX PORTS");
+    expect(out).toContain("3212/3213");
+  });
+
+  it.each([
+    ["http://127.0.0.1:3212", "3212"],
+    ["http://localhost:3214", "3214"],
+    ["https://happy-fox-123.convex.cloud", null],
+    ["http://127.0.0.1", null],
+    ["", null],
+    [undefined, null],
+    ["not a url", null],
+  ])("localBackendPort(%s) is %s", (url, port) => {
+    expect(localBackendPort(url)).toBe(port);
   });
 
   it("formats a table and an empty state", () => {
@@ -190,30 +261,56 @@ describe("lanes", () => {
   it("points cloud lanes at the dashboard or expiry, never a CLI delete", () => {
     const [lane] = toLanes(parseWorktrees(PORCELAIN), readEnv);
     const hint = lane ? deletionHint(lane) : "";
+    expect(hint).toMatch(/NOT deleted/);
     expect(hint).toMatch(/Convex dashboard/);
     expect(hint).toMatch(/in 7 days/);
     expect(hint).not.toMatch(/deployment delete/);
   });
 
-  it("says local lanes are removed with the worktree", () => {
-    const [lane] = toLanes(parseWorktrees(PORCELAIN), () => ({
-      CONVEX_DEPLOYMENT: "local:happy-fox-123",
-    }));
-    const hint = lane ? deletionHint(lane).replaceAll("\\", "/") : "";
-    expect(hint).toContain("F:/work/app-12-login/.convex/local/default");
-    expect(hint).toMatch(/removed with the worktree/);
-  });
+  it.each(["local:happy-fox-123", "anonymous:anonymous-agent"])(
+    "says %s lanes are removed with the worktree",
+    (deployment) => {
+      const [lane] = toLanes(parseWorktrees(PORCELAIN), () => ({
+        CONVEX_DEPLOYMENT: deployment,
+      }));
+      const hint = lane ? deletionHint(lane).replaceAll("\\", "/") : "";
+      expect(hint).toContain("F:/work/app-12-login/.convex/local/default");
+      expect(hint).toMatch(/removed with the worktree/);
+      expect(hint).not.toMatch(/NOT deleted/);
+    },
+  );
 });
 
 function makeDeps(overrides: Partial<Parameters<typeof laneNew>[0]> = {}) {
-  const calls: { command: string; args: string[]; cwd: string }[] = [];
+  const calls: {
+    command: string;
+    args: string[];
+    cwd: string;
+    env?: Record<string, string>;
+    stdin?: "ignore";
+  }[] = [];
   const logs: string[] = [];
   const written: { dir: string; values: Record<string, string | number> }[] =
     [];
   const deps = {
     cwd: "F:/work/app",
-    run: (command: string, args: string[], { cwd }: { cwd: string }) => {
-      calls.push({ command, args, cwd });
+    home: "F:/no-such-home",
+    run: (
+      command: string,
+      args: string[],
+      {
+        cwd,
+        env,
+        stdin,
+      }: { cwd: string; env?: Record<string, string>; stdin?: "ignore" },
+    ) => {
+      calls.push({
+        command,
+        args,
+        cwd,
+        ...(env ? { env } : {}),
+        ...(stdin ? { stdin } : {}),
+      });
       return 0;
     },
     output: () => PORCELAIN,
@@ -278,15 +375,94 @@ describe("laneNew", () => {
     ]);
   });
 
-  it("uses the local deployment reference with --local", async () => {
-    const { deps, calls } = makeDeps();
-    await laneNew(deps, { ...args, local: true });
-    expect(calls[2]?.args.slice(1)).toEqual([
-      "deployment",
-      "create",
-      "local",
-      "--select",
+  it("creates an anonymous local deployment on its own ports with convex dev --once when --local", async () => {
+    const { deps, calls, written } = makeDeps();
+    const result = await laneNew(deps, { ...args, local: true });
+    expect(calls.map((c) => [c.command, c.args[0]])).toEqual([
+      ["git", "worktree"],
+      ["npm", "ci"],
+      [process.execPath, expect.stringContaining("main.js")],
     ]);
+    expect(calls[2]?.args.slice(1)).toEqual([
+      "dev",
+      "--once",
+      "--local-cloud-port",
+      "3214",
+      "--local-site-port",
+      "3215",
+    ]);
+    expect(calls[2]?.cwd).toBe(result.lanePath);
+    expect(calls[2]?.stdin).toBe("ignore");
+    expect(calls[2]?.env).toEqual({
+      CONVEX_AGENT_MODE: "",
+      CONVEX_ALLOW_ANONYMOUS: "",
+      CONVEX_DEPLOYMENT: "",
+      CONVEX_DEPLOY_KEY: "",
+      CONVEX_DEPLOYMENT_TOKEN: "",
+      CONVEX_SELF_HOSTED_URL: "",
+      CONVEX_SELF_HOSTED_ADMIN_KEY: "",
+    });
+    expect(written).toEqual([
+      { dir: result.lanePath, values: { PORT: 5175, PREVIEW_PORT: 4175 } },
+      { dir: result.lanePath, values: { CONVEX_AGENT_MODE: "anonymous" } },
+    ]);
+  });
+
+  it("does not pass the anonymous env, stdin or local ports to cloud lanes", async () => {
+    const { deps, calls } = makeDeps();
+    const result = await laneNew(deps, args);
+    expect(calls[2]?.env).toBeUndefined();
+    expect(calls[2]?.stdin).toBeUndefined();
+    expect(calls[2]?.args.join(" ")).not.toMatch(/--local-/);
+    expect(result).toMatchObject({ convexPort: null, convexSitePort: null });
+  });
+
+  it("does not reuse Convex ports another lane already holds", async () => {
+    const { deps, calls } = makeDeps({
+      readEnv: (path: string): Record<string, string> =>
+        path.endsWith("12-login")
+          ? {
+              PORT: "5174",
+              PREVIEW_PORT: "4174",
+              VITE_CONVEX_URL: "http://127.0.0.1:3214",
+              VITE_CONVEX_SITE_URL: "http://127.0.0.1:3215",
+            }
+          : {},
+    });
+    const result = await laneNew(deps, { ...args, local: true });
+    expect(result).toMatchObject({
+      port: 5176,
+      convexPort: 3216,
+      convexSitePort: 3217,
+    });
+    expect(calls[2]?.args).toContain("3216");
+  });
+
+  it("refuses a local lane whose name has legacy home-directory state", async () => {
+    const home = mkdtempSync(join(tmpdir(), "lane-home-"));
+    try {
+      const { deps, calls } = makeDeps({ home });
+      const lanePath = join("F:/work", "app-7-search");
+      mkdirSync(legacyAnonymousStateDir(home, lanePath), { recursive: true });
+      await expect(laneNew(deps, { ...args, local: true })).rejects.toThrow(
+        /anonymous-convex-backend-state.*would reuse/,
+      );
+      expect(calls).toEqual([]);
+      await expect(laneNew(deps, args)).resolves.toBeDefined();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("names the legacy state directory after the worktree directory", () => {
+    expect(
+      legacyAnonymousStateDir("/home/u", "/work/app-7-search").replaceAll(
+        "\\",
+        "/",
+      ),
+    ).toBe(
+      "/home/u/.convex/anonymous-convex-backend-state/anonymous-app-7-search",
+    );
   });
 
   it("validates before touching git", async () => {
@@ -304,11 +480,52 @@ describe("laneNew", () => {
     await expect(laneNew(deps, args)).rejects.toThrow(/npm ci/);
     expect(written).toEqual([]);
   });
+
+  function recordOrder(failOn: string) {
+    const order: string[] = [];
+    const { deps } = makeDeps({
+      run: (command: string) => {
+        const name = command === process.execPath ? "convex" : command;
+        order.push(name);
+        return name === failOn ? 1 : 0;
+      },
+      writeEnv: (_dir: string, values: Record<string, string | number>) => {
+        order.push(JSON.stringify(values));
+      },
+    });
+    return { deps, order };
+  }
+  const portsEnv = JSON.stringify({ PORT: 5175, PREVIEW_PORT: 4175 });
+  const agentEnv = JSON.stringify({ CONVEX_AGENT_MODE: "anonymous" });
+
+  it("writes a --local lane's ports before npm ci and agent mode only after the deployment exists", async () => {
+    const ok = recordOrder("none");
+    await laneNew(ok.deps, { ...args, local: true });
+    expect(ok.order).toEqual(["git", portsEnv, "npm", "convex", agentEnv]);
+
+    const failedNpm = recordOrder("npm");
+    await expect(
+      laneNew(failedNpm.deps, { ...args, local: true }),
+    ).rejects.toThrow(/npm ci/);
+    expect(failedNpm.order).toEqual(["git", portsEnv, "npm"]);
+
+    const failedConvex = recordOrder("convex");
+    await expect(
+      laneNew(failedConvex.deps, { ...args, local: true }),
+    ).rejects.toThrow(/dev --once/);
+    expect(failedConvex.order).toEqual(["git", portsEnv, "npm", "convex"]);
+  });
 });
 
 describe("laneRm", () => {
   it("removes the worktree and only prints the deletion command", () => {
-    const { deps, calls, logs } = makeDeps();
+    const { deps, calls, logs } = makeDeps({
+      readEnv: () => ({
+        PORT: "5174",
+        PREVIEW_PORT: "4174",
+        CONVEX_DEPLOYMENT: "dev:happy-fox-123",
+      }),
+    });
     laneRm(deps, { command: "rm", slug: "12-login", force: false });
     expect(calls).toEqual([
       {
@@ -320,6 +537,35 @@ describe("laneRm", () => {
     expect(logs.join("\n")).toMatch(/NOT deleted/);
     expect(logs.join("\n")).not.toMatch(/deployment delete/);
     expect(logs.join("\n")).toMatch(/Convex dashboard/);
+  });
+
+  it.each([
+    ["a local lane", { CONVEX_DEPLOYMENT: "anonymous:anonymous-agent" }],
+    [
+      "a --local lane whose creation failed",
+      { PORT: "5175", PREVIEW_PORT: "4175" },
+    ],
+  ])("does not claim the deployment of %s survives", (_label, env) => {
+    const { deps, logs } = makeDeps({ readEnv: () => env });
+    laneRm(deps, { command: "rm", slug: "12-login", force: false });
+    const log = logs.join("\n");
+    expect(log).toMatch(/removed with the worktree/);
+    expect(log).not.toMatch(/NOT deleted/);
+  });
+
+  it.each([
+    [
+      "a cloud deployment wins over a stray agent-mode line",
+      {
+        CONVEX_DEPLOYMENT: "dev:happy-fox-123",
+        CONVEX_AGENT_MODE: "anonymous",
+      },
+    ],
+    ["a lane with no env at all", {}],
+  ])("keeps the cloud hint for %s", (_label, env) => {
+    const { deps, logs } = makeDeps({ readEnv: () => env });
+    laneRm(deps, { command: "rm", slug: "12-login", force: false });
+    expect(logs.join("\n")).toMatch(/NOT deleted/);
   });
 
   it("passes --force through and reports a failed removal", () => {
@@ -336,5 +582,87 @@ describe("laneRm", () => {
     expect(seen).toEqual([
       ["worktree", "remove", "--force", "F:/work/app-12-login"],
     ]);
+  });
+});
+
+describe("realDeps().run", () => {
+  const exitUnlessBlank = [
+    "-e",
+    "process.exit(process.env.CONVEX_DEPLOYMENT === '' ? 0 : 7)",
+  ];
+
+  it("lets an env override beat a value inherited from the shell", () => {
+    vi.stubEnv("CONVEX_DEPLOYMENT", "dev:inherited-123");
+    try {
+      const { run } = realDeps();
+      const cwd = process.cwd();
+      expect(run(process.execPath, exitUnlessBlank, { cwd })).toBe(7);
+      expect(
+        run(process.execPath, exitUnlessBlank, {
+          cwd,
+          env: { CONVEX_DEPLOYMENT: "" },
+        }),
+      ).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("hands stdin: ignore to the spawn as the child's stdin, and inherits it otherwise", () => {
+    const stdio: unknown[] = [];
+    const spawn = ((
+      _command: string,
+      _args: string[],
+      options: { stdio: unknown },
+    ) => {
+      stdio.push(options.stdio);
+      return { status: 0 };
+    }) as unknown as typeof spawnSync;
+    const { run } = realDeps({ spawn });
+    const cwd = process.cwd();
+    run(process.execPath, [], { cwd, stdin: "ignore" });
+    run(process.execPath, [], { cwd });
+    expect(stdio).toEqual([
+      ["ignore", "inherit", "inherit"],
+      ["inherit", "inherit", "inherit"],
+    ]);
+  });
+});
+
+describe("isPortInUse", () => {
+  async function listenOn(host: string) {
+    const server = createServer();
+    await new Promise<void>((ok, fail) => {
+      server.once("error", fail);
+      server.listen({ port: 0, host }, ok);
+    });
+    return server;
+  }
+  const portOf = (server: Server) => (server.address() as AddressInfo).port;
+  const close = (server: Server) =>
+    new Promise<void>((done) => server.close(() => done()));
+
+  it.each(["127.0.0.1", "0.0.0.0", "::1", "::"])(
+    "sees a listener bound to %s",
+    async (host) => {
+      let server: Server;
+      try {
+        server = await listenOn(host);
+      } catch {
+        return; // no IPv6 on this machine
+      }
+      try {
+        await expect(isPortInUse(portOf(server))).resolves.toBe(true);
+      } finally {
+        await close(server);
+      }
+    },
+  );
+
+  it("reports a closed port as free", async () => {
+    const server = await listenOn("127.0.0.1");
+    const port = portOf(server);
+    await close(server);
+    await expect(isPortInUse(port)).resolves.toBe(false);
   });
 });
