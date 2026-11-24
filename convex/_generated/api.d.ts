@@ -16,6 +16,7 @@ import type * as ai_openaiCompatible from "../ai/openaiCompatible.js";
 import type * as ai_types from "../ai/types.js";
 import type * as discord_tables from "../discord/tables.js";
 import type * as entries_tables from "../entries/tables.js";
+import type * as health_queries from "../health/queries.js";
 import type * as ingest_tables from "../ingest/tables.js";
 import type * as lib_enums from "../lib/enums.js";
 import type * as lib_errors from "../lib/errors.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   "ai/types": typeof ai_types;
   "discord/tables": typeof discord_tables;
   "entries/tables": typeof entries_tables;
+  "health/queries": typeof health_queries;
   "ingest/tables": typeof ingest_tables;
   "lib/enums": typeof lib_enums;
   "lib/errors": typeof lib_errors;

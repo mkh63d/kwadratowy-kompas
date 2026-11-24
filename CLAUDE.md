@@ -81,6 +81,7 @@ say so instead of claiming it passed.
   configured deployment) and run `npm run codegen:check`. `convex/_generated/` is committed.
   Such changes never run in parallel with other `convex/` file changes.
 - Schema changes are additive only.
+- Public functions come only from the wrappers in `convex/lib/functions.ts` (`publicQuery`, `userMutation`, …), never a raw `query`/`mutation`/`action`; ESLint and `convex/lib/wrapperCoverage.test.ts` enforce it.
 
 ## AI provider rules
 
