@@ -1,5 +1,6 @@
 import {
   actionGeneric,
+  httpActionGeneric,
   internalActionGeneric,
   internalMutationGeneric,
   internalQueryGeneric,
@@ -18,7 +19,9 @@ const ALLOWLIST: ReadonlySet<string> = new Set([
   "http.default",
 ]);
 
-// Mirrors the Convex bundler's entry points: files with more than one dot (tests, .d.ts) are not deployed.
+const HTTP_MODULE = /^(http|[^/]+\/httpHandler)$/;
+
+// Like the Convex bundler, skips _generated and files with more than one dot (tests, .d.ts).
 // Root-anchored, because a relative glob keys the importer's own directory as "./".
 const deployedModules: ModuleMap = import.meta.glob<Record<string, unknown>>([
   "/convex/**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts}",
@@ -26,43 +29,46 @@ const deployedModules: ModuleMap = import.meta.glob<Record<string, unknown>>([
   "!/convex/**/*.*.*",
 ]);
 
-function functionName(modulePath: string, exportName: string): string {
-  const moduleName = modulePath
-    .replace(/^\/convex\//, "")
-    .replace(/\.[^.]+$/, "")
-    .replaceAll("/", ".");
-  return `${moduleName}.${exportName}`;
+function modulePathOf(path: string): string {
+  return path.replace(/^\/convex\//, "").replace(/\.[^.]+$/, "");
 }
 
-function isPublicFunction(value: unknown): boolean {
-  return (
-    typeof value === "function" &&
-    (value as { isPublic?: unknown }).isPublic === true
-  );
+function hasFlag(value: unknown, flag: "isPublic" | "isHttp"): boolean {
+  return typeof value === "function" && Reflect.get(value, flag) === true;
 }
 
-async function scanPublicFunctions(modules: ModuleMap) {
+async function scanModules(modules: ModuleMap) {
   const publicNames: string[] = [];
   const unwrapped: string[] = [];
+  const misplacedHttp: string[] = [];
   for (const [path, load] of Object.entries(modules)) {
+    const modulePath = modulePathOf(path);
     for (const [exportName, value] of Object.entries(await load())) {
-      if (!isPublicFunction(value)) continue;
-      const name = functionName(path, exportName);
+      const name = `${modulePath.replaceAll("/", ".")}.${exportName}`;
+      if (hasFlag(value, "isHttp") && !HTTP_MODULE.test(modulePath)) {
+        misplacedHttp.push(name);
+      }
+      if (!hasFlag(value, "isPublic")) continue;
       publicNames.push(name);
       if (!isWrapped(value) && !ALLOWLIST.has(name)) unwrapped.push(name);
     }
   }
-  return { publicNames, unwrapped };
+  return { publicNames, unwrapped, misplacedHttp };
 }
 
 describe("wrapper coverage (spec §5.3)", () => {
   it("every public function in a deployed module is wrapper output", async () => {
-    const { unwrapped } = await scanPublicFunctions(deployedModules);
+    const { unwrapped } = await scanModules(deployedModules);
     expect(unwrapped).toStrictEqual([]);
   });
 
+  it("HTTP actions live only in convex/http.ts and convex/*/httpHandler.ts", async () => {
+    const { misplacedHttp } = await scanModules(deployedModules);
+    expect(misplacedHttp).toStrictEqual([]);
+  });
+
   it("scans the real modules, test files excluded", async () => {
-    const { publicNames } = await scanPublicFunctions(deployedModules);
+    const { publicNames } = await scanModules(deployedModules);
     expect(publicNames).toContain("health.queries.ping");
     const paths = Object.keys(deployedModules);
     expect(paths).toContain("/convex/lib/functions.ts");
@@ -90,13 +96,38 @@ describe("wrapper coverage (spec §5.3)", () => {
         }),
     };
 
-    const { unwrapped } = await scanPublicFunctions(modules);
+    const { unwrapped } = await scanModules(modules);
 
     expect(unwrapped).toStrictEqual([
       "feature.raw.rawQuery",
       "feature.raw.rawMutation",
       "feature.raw.rawAction",
       "auth.store",
+    ]);
+  });
+
+  it("flags HTTP actions outside http.ts and one-level httpHandler.ts", async () => {
+    const httpAction = () =>
+      httpActionGeneric(() => Promise.resolve(new Response()));
+    const modules: ModuleMap = {
+      "/convex/http.ts": () => Promise.resolve({ hook: httpAction() }),
+      "/convex/ingest/httpHandler.ts": () =>
+        Promise.resolve({ handler: httpAction() }),
+      "/convex/feature/raw.ts": () =>
+        Promise.resolve({ hook: httpAction(), notAFunction: { isHttp: true } }),
+      "/convex/httpHandler.ts": () => Promise.resolve({ hook: httpAction() }),
+      "/convex/a/b/httpHandler.ts": () =>
+        Promise.resolve({ hook: httpAction() }),
+      "/convex/feature/http.ts": () => Promise.resolve({ hook: httpAction() }),
+    };
+
+    const { misplacedHttp } = await scanModules(modules);
+
+    expect(misplacedHttp).toStrictEqual([
+      "feature.raw.hook",
+      "httpHandler.hook",
+      "a.b.httpHandler.hook",
+      "feature.http.hook",
     ]);
   });
 });

@@ -28,7 +28,7 @@ function restrictRawBuilders({ allow = [], allowGeneric = false } = {}) {
     "error",
     {
       patterns: restricted.map(({ generated, message }) => ({
-        group: ["**/_generated/server"],
+        group: ["**/_generated/server", "**/_generated/server.js"],
         importNames: generated,
         message,
       })),
