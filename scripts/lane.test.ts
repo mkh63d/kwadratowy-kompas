@@ -195,25 +195,37 @@ describe("lanes", () => {
     expect(hint).not.toMatch(/deployment delete/);
   });
 
-  it("says local lanes are removed with the worktree", () => {
-    const [lane] = toLanes(parseWorktrees(PORCELAIN), () => ({
-      CONVEX_DEPLOYMENT: "local:happy-fox-123",
-    }));
-    const hint = lane ? deletionHint(lane).replaceAll("\\", "/") : "";
-    expect(hint).toContain("F:/work/app-12-login/.convex/local/default");
-    expect(hint).toMatch(/removed with the worktree/);
-  });
+  it.each(["local:happy-fox-123", "anonymous:anonymous-agent"])(
+    "says %s lanes are removed with the worktree",
+    (deployment) => {
+      const [lane] = toLanes(parseWorktrees(PORCELAIN), () => ({
+        CONVEX_DEPLOYMENT: deployment,
+      }));
+      const hint = lane ? deletionHint(lane).replaceAll("\\", "/") : "";
+      expect(hint).toContain("F:/work/app-12-login/.convex/local/default");
+      expect(hint).toMatch(/removed with the worktree/);
+    },
+  );
 });
 
 function makeDeps(overrides: Partial<Parameters<typeof laneNew>[0]> = {}) {
-  const calls: { command: string; args: string[]; cwd: string }[] = [];
+  const calls: {
+    command: string;
+    args: string[];
+    cwd: string;
+    env?: Record<string, string>;
+  }[] = [];
   const logs: string[] = [];
   const written: { dir: string; values: Record<string, string | number> }[] =
     [];
   const deps = {
     cwd: "F:/work/app",
-    run: (command: string, args: string[], { cwd }: { cwd: string }) => {
-      calls.push({ command, args, cwd });
+    run: (
+      command: string,
+      args: string[],
+      { cwd, env }: { cwd: string; env?: Record<string, string> },
+    ) => {
+      calls.push({ command, args, cwd, ...(env ? { env } : {}) });
       return 0;
     },
     output: () => PORCELAIN,
@@ -278,15 +290,33 @@ describe("laneNew", () => {
     ]);
   });
 
-  it("uses the local deployment reference with --local", async () => {
-    const { deps, calls } = makeDeps();
-    await laneNew(deps, { ...args, local: true });
-    expect(calls[2]?.args.slice(1)).toEqual([
-      "deployment",
-      "create",
-      "local",
-      "--select",
+  it("creates an anonymous local deployment with convex dev --once when --local", async () => {
+    const { deps, calls, written } = makeDeps();
+    const result = await laneNew(deps, { ...args, local: true });
+    expect(calls.map((c) => [c.command, c.args[0]])).toEqual([
+      ["git", "worktree"],
+      ["npm", "ci"],
+      [process.execPath, expect.stringContaining("main.js")],
     ]);
+    expect(calls[2]?.args.slice(1)).toEqual(["dev", "--once"]);
+    expect(calls[2]?.cwd).toBe(result.lanePath);
+    expect(calls[2]?.env).toEqual({
+      CONVEX_AGENT_MODE: "anonymous",
+      CONVEX_ALLOW_ANONYMOUS: "",
+      CONVEX_DEPLOYMENT: "",
+      CONVEX_DEPLOY_KEY: "",
+      CONVEX_SELF_HOSTED_URL: "",
+      CONVEX_SELF_HOSTED_ADMIN_KEY: "",
+    });
+    expect(written).toEqual([
+      { dir: result.lanePath, values: { PORT: 5175, PREVIEW_PORT: 4175 } },
+    ]);
+  });
+
+  it("does not pass the anonymous env to cloud lanes", async () => {
+    const { deps, calls } = makeDeps();
+    await laneNew(deps, args);
+    expect(calls[2]?.env).toBeUndefined();
   });
 
   it("validates before touching git", async () => {

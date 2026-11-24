@@ -67,8 +67,9 @@ Szczegóły działania:
   jawnym błędem, a nie cichą zmianą portu.
 - `lane:list` pokazuje worktree na gałęziach `feat/*` razem z portami i deploymentem.
 - `lane:rm` usuwa worktree, ale **zostawia gałąź** (usuń ją `git branch -d`, gdy PR jest scalony)
-  i **nie usuwa deploymentu Convex**. CLI Convex 1.50 nie ma komendy `deployment delete`: usuń
-  deployment w panelu Convex (Project → Deployments) albo poczekaj, aż wygaśnie po 7 dniach.
+  i **nie usuwa deploymentu Convex w chmurze**. CLI Convex 1.50 nie ma komendy `deployment delete`:
+  usuń deployment w panelu Convex (Project → Deployments) albo poczekaj, aż wygaśnie po 7 dniach.
+  Deployment lokalny (`--local`) znika razem z worktree.
   Niezacommitowane zmiany blokują usunięcie, wymusza je `--force`.
 - Raporty testów (`reports/`, `coverage/`) lądują w katalogu worktree, więc ścieżki ich nie
   nadpisują.
@@ -91,6 +92,16 @@ npm run lane:new -- ania 12 login --local
 Deployment lokalny (beta) nie zużywa limitu, działa na Twojej maszynie i nie wymaga logowania
 ([dokumentacja](https://docs.convex.dev/cli/local-deployments)). Jego dane leżą w worktree, w
 `<ścieżka>/.convex/local/default`, więc znikają razem z nim. Nie widać ich z innej maszyny.
+
+Z `--local` skrypt uruchamia w nowym worktree `npx convex dev --once` w trybie anonimowym
+(`CONVEX_AGENT_MODE=anonymous`), tak jak ręczne uruchomienie opisane w „Start środowiska”.
+Komenda tworzy deployment, wgrywa funkcje z `convex/` i zapisuje w `.env.local`
+`CONVEX_DEPLOYMENT=anonymous:anonymous-agent` oraz `VITE_CONVEX_URL`, a skrypt dopisuje `PORT` i
+`PREVIEW_PORT`. Ścieżka lokalna nigdy nie dotyka chmury, także gdy CLI jest zalogowane: skrypt
+czyści dla tej komendy `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_SELF_HOSTED_URL`,
+`CONVEX_SELF_HOSTED_ADMIN_KEY` i `CONVEX_ALLOW_ANONYMOUS` odziedziczone z powłoki, bo CLI wybrałoby
+wskazany w nich deployment przed trybem anonimowym. `npx convex deployment create local` nie
+działa w trybie anonimowym (patrz [troubleshooting](troubleshooting.md)).
 
 ## Unikanie kolizji
 

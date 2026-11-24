@@ -125,6 +125,21 @@ export function upsertEnv(content, values) {
 }
 
 /**
+ * The Convex CLI picks a deployment from these variables before it considers anonymous mode,
+ * so a value inherited from the shell would send a `--local` lane to that (possibly cloud)
+ * deployment. The CLI treats an empty value as unset. `deployment create local` refuses
+ * anonymous mode (CLI 1.50), so `dev --once` is what creates the local deployment.
+ */
+export const LOCAL_CONVEX_ENV = {
+  CONVEX_AGENT_MODE: "anonymous",
+  CONVEX_ALLOW_ANONYMOUS: "",
+  CONVEX_DEPLOYMENT: "",
+  CONVEX_DEPLOY_KEY: "",
+  CONVEX_SELF_HOSTED_URL: "",
+  CONVEX_SELF_HOSTED_ADMIN_KEY: "",
+};
+
+/**
  * @typedef {{ path: string, branch: string | null }} Worktree
  * @param {string} porcelain output of `git worktree list --porcelain`
  * @returns {Worktree[]}
@@ -214,11 +229,12 @@ export function findLane(slug, lanes) {
 
 /**
  * The Convex CLI has no `deployment delete`: cloud deployments are removed in the dashboard
- * or expire, local ones live inside the worktree. CONVEX_DEPLOYMENT is `local:<name>` for local.
+ * or expire, local ones live inside the worktree. CONVEX_DEPLOYMENT is `local:<name>` or
+ * `anonymous:<name>` (what `lane:new --local` creates) for local.
  * @param {Lane} lane
  */
 export function deletionHint(lane) {
-  if (lane.deployment?.startsWith("local:"))
+  if (/^(local|anonymous):/.test(lane.deployment ?? ""))
     return `Its data lives in ${join(lane.path, ".convex", "local", "default")} and is removed with the worktree.`;
   return 'Delete it in the Convex dashboard (Project -> Deployments) or let it expire (created with --expiration "in 7 days").';
 }
@@ -281,11 +297,11 @@ export async function laneNew(deps, args) {
 
   step(
     args.local
-      ? "Creating local Convex deployment"
+      ? "Creating anonymous local Convex deployment (no account needed)"
       : `Creating Convex deployment ${reference} (expires in 7 days)`,
   );
   const create = args.local
-    ? ["deployment", "create", "local", "--select"]
+    ? ["dev", "--once"]
     : [
         "deployment",
         "create",
@@ -300,7 +316,7 @@ export async function laneNew(deps, args) {
     process.execPath,
     [CONVEX_BIN, ...create],
     lanePath,
-    args.local ? { CONVEX_AGENT_MODE: "anonymous" } : undefined,
+    args.local ? LOCAL_CONVEX_ENV : undefined,
   );
 
   deps.writeEnv(lanePath, { PORT: port, PREVIEW_PORT: previewPort });

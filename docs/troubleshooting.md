@@ -95,6 +95,18 @@ Pliki mają być w UTF-8 bez BOM. Polecenia PowerShella `Set-Content` i `Out-Fil
 
 **Co zrobić:** skonfiguruj deployment (`npx convex dev --once`, lokalnie bez konta: `CONVEX_AGENT_MODE=anonymous npx convex dev --once`), potem `npx convex codegen` i `npm run codegen:check`. Wygenerowane pliki są w repozytorium, więc commituj je razem ze zmianą w `convex/`. Zmiany w `convex/` nie idą równolegle z innymi zmianami w tym katalogu (patrz [development-workflow.md](development-workflow.md)).
 
+## `lane:new --local`: „Cannot create a deployment in anonymous mode”
+
+**Objaw:** `npm run lane:new -- <osoba> <nr-issue> <slug> --local` tworzy worktree i robi `npm ci`, a potem kończy się błędem ``Cannot create a deployment in anonymous mode. Run `npx convex login` and configure a project first.``, a skrypt dodaje ``… deployment create local --select` failed (exit 1).``
+
+**Przyczyna:** starsza wersja skryptu tworzyła deployment lokalny komendą `npx convex deployment create local`, a CLI Convex 1.50 odrzuca ją w trybie anonimowym (`CONVEX_AGENT_MODE=anonymous`).
+
+**Co zrobić:**
+
+- Zaktualizuj gałąź: obecny `lane:new --local` używa `npx convex dev --once` w trybie anonimowym i nie wymaga `npx convex login`.
+- Worktree z nieudanej próby już istnieje, więc ponowne `lane:new` zgłosi, że katalog istnieje. Dokończ go ręcznie: w katalogu ścieżki uruchom `CONVEX_AGENT_MODE=anonymous npx convex dev --once` (PowerShell: `$env:CONVEX_AGENT_MODE='anonymous'; npx convex dev --once`), potem dopisz do `.env.local` `PORT` i `PREVIEW_PORT` (pierwsza wolna para, np. `5174` i `4174`, patrz `npm run lane:list`). Albo usuń go (`npm run lane:rm -- <nr-issue>-<slug> --force`, potem `git branch -D feat/<nr-issue>-<slug>`) i uruchom `lane:new` jeszcze raz.
+- Nie loguj się do Convex tylko po to, żeby obejść ten błąd: deployment lokalny nie potrzebuje konta.
+
 ## Playwright: brakuje przeglądarek
 
 **Objaw:** `npm run test:e2e` (a więc też `npm run verify`) kończy się błędem `Executable doesn't exist at ...` z podpowiedzią `npx playwright install`.

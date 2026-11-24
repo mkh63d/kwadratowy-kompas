@@ -36,7 +36,7 @@ Repozytorium jest na etapie szkieletu. Działa strona główna i strona 404, war
 
 - Node 24 (wersja w `.nvmrc`; `package.json` wymaga `>=24.15.0 <25`) i npm. Yarn i pnpm nie są używane.
 - Git. Do pracy z issue i PR: [GitHub CLI](https://cli.github.com/) (`gh auth login`).
-- Konto Convex nie jest potrzebne: aplikacja działa w trybie offline albo z lokalnym backendem.
+- Konto Convex nie jest potrzebne do pracy lokalnej: aplikacja działa w trybie offline albo z lokalnym backendem.
 
 Wersję z `.nvmrc` ustawisz menedżerem Node, np. [fnm](https://github.com/Schniz/fnm) (`fnm use`) lub nvm (`nvm use`).
 
@@ -114,7 +114,7 @@ Domyślnie działa `mock`, który jest też siatką bezpieczeństwa, gdy prawdzi
 Każdy pracuje na osobnej ścieżce: własny worktree, własne porty i własny deployment Convex. Pliki wspólne (lista w `.github/hot-files.txt`) zmienia się tylko w małym PR z kontraktem uzgodnionym z zespołem. Przed startem i przed PR uruchom `npm run overlap`.
 
 ```bash
-npm run lane:new -- <osoba> <nr-issue> <slug>
+npm run lane:new -- <osoba> <nr-issue> <slug> --local   # lokalny Convex, bez konta
 npm run lane:list
 npm run lane:rm -- <nr-issue>-<slug>
 ```
