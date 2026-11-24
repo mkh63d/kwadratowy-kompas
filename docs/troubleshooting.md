@@ -103,10 +103,37 @@ Pliki mają być w UTF-8 bez BOM. Polecenia PowerShella `Set-Content` i `Out-Fil
 
 **Co zrobić:**
 
-- Zaktualizuj gałąź: obecny `lane:new --local` używa `npx convex dev --once` w trybie anonimowym i nie wymaga `npx convex login`.
-- Worktree z nieudanej próby już istnieje, więc ponowne `lane:new` zgłosi, że katalog istnieje. Najprościej go usunąć (`npm run lane:rm -- <nr-issue>-<slug> --force`, potem `git branch -D feat/<nr-issue>-<slug>`) i uruchomić `lane:new` jeszcze raz: skrypt sam pilnuje, żeby deployment powstał lokalnie.
-- Jeśli wolisz dokończyć go ręcznie, najpierw sprawdź, że w powłoce nie jest ustawiona żadna z `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_DEPLOYMENT_TOKEN`, `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` ani `CONVEX_ALLOW_ANONYMOUS=false`. Inaczej CLI użyje wskazanego w nich deploymentu, także w chmurze. Potem w katalogu ścieżki uruchom `CONVEX_AGENT_MODE=anonymous npx convex dev --once` (PowerShell: `$env:CONVEX_AGENT_MODE='anonymous'; npx convex dev --once`) i dopisz do `.env.local` `PORT` i `PREVIEW_PORT` (pierwsza wolna para, np. `5174` i `4174`, patrz `npm run lane:list`).
+- Zaktualizuj gałąź: obecny `lane:new --local` używa `npx convex dev --once` i nie wymaga `npx convex login`.
+- Worktree z nieudanej próby już istnieje, więc ponowne `lane:new` zgłosi, że katalog istnieje. Najprościej go usunąć (`npm run lane:rm -- <nr-issue>-<slug> --force`, potem `git branch -D feat/<nr-issue>-<slug>`) i uruchomić `lane:new` jeszcze raz: skrypt sam pilnuje, żeby deployment powstał lokalnie, pod własną nazwą i na własnych portach.
+- Jeśli wolisz dokończyć go ręcznie:
+  1. Sprawdź, że w powłoce nie jest ustawiona żadna z `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_DEPLOYMENT_TOKEN`, `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY`, `CONVEX_AGENT_MODE` ani `CONVEX_ALLOW_ANONYMOUS=false`. Inaczej CLI użyje wskazanego w nich deploymentu, także w chmurze, albo (przy `CONVEX_AGENT_MODE=anonymous`) nazwie deployment `anonymous-agent`, jak w każdej innej ścieżce.
+  2. Wybierz numer ścieżki N, którego nie używa żadna ścieżka z `npm run lane:list`. Porty to `5173 + N` i `4173 + N` (dev i preview) oraz `3210 + 2N` i `3211 + 2N` (Convex).
+  3. W katalogu ścieżki uruchom CLI z wejściem, które nie jest terminalem (wtedy wybiera tryb anonimowy, nawet gdy jest zalogowane, i nie zadaje pytań). Bash: `npx convex dev --once --local-cloud-port <3210+2N> --local-site-port <3211+2N> < /dev/null`. PowerShell: `cmd /c "npx convex dev --once --local-cloud-port <3210+2N> --local-site-port <3211+2N> < NUL"`.
+  4. Dopisz do `.env.local` `PORT=<5173+N>`, `PREVIEW_PORT=<4173+N>` i `CONVEX_AGENT_MODE=anonymous`. Bez ostatniej linii `npm run dev` z zalogowanym CLI zaproponuje podlinkowanie ścieżki do chmury z domyślną odpowiedzią „tak” (patrz [development-workflow.md](development-workflow.md)).
+  5. Sprawdź wynik w `npm run lane:list`: ścieżka ma mieć swoje porty i `anonymous:anonymous-<katalog worktree>`.
 - Nie loguj się do Convex tylko po to, żeby obejść ten błąd: deployment lokalny nie potrzebuje konta.
+
+## Dwie ścieżki `--local` walczą o backend Convex
+
+**Objaw:** `npm run dev` w ścieżce lokalnej kończy się błędem `A local backend is still running on port 3210. Please stop it and run this command again.`, albo ścieżka nagle łączy się z backendem na innym porcie niż wcześniej (kolumna `CONVEX PORTS` w `npm run lane:list` się zmieniła).
+
+**Przyczyna:**
+
+- Ścieżki utworzone przed wprowadzeniem osobnych portów mają deployment `anonymous:anonymous-agent` na porcie `3210`. Dwie takie ścieżki mają tę samą nazwę i ten sam port, więc druga uznaje backend pierwszej za swój, czeka 5 sekund i się poddaje.
+- CLI przy `npm run dev` próbuje najpierw portów zapisanych w `.convex/local/default/config.json`. Jeśli któryś jest zajęty (inny program, zapomniany backend), CLI bez ostrzeżenia bierze pierwszy wolny port od `3210` i zapisuje go jako nowy port ścieżki. Może to być port przydzielony innej, akurat zatrzymanej ścieżce.
+
+**Co zrobić:**
+
+- Starą ścieżkę `anonymous-agent` usuń i utwórz od nowa: wypchnij albo zapisz zmiany, potem `npm run lane:rm -- <nr-issue>-<slug> --force`, `git branch -D feat/<nr-issue>-<slug>` i `npm run lane:new -- … --local`. Dane lokalnego deploymentu przepadają razem z worktree.
+- Gdy port się przesunął, zatrzymaj proces na porcie ścieżki (`Get-NetTCPConnection -LocalPort <port> | Select-Object OwningProcess`, macOS i Linux: `lsof -i :<port>`) i przywróć jej porty jednorazowo: w katalogu ścieżki `npx convex dev --once --local-cloud-port <API> --local-site-port <site>` z portami ścieżki (`3210 + 2N`, `3211 + 2N`). CLI zapisze je znowu w `config.json` i `.env.local`.
+
+## `lane:new --local`: „…anonymous-convex-backend-state… exists”
+
+**Objaw:** `npm run lane:new -- … --local` kończy się od razu, jeszcze przed `git worktree add`, komunikatem `<katalog domowy>/.convex/anonymous-convex-backend-state/anonymous-<katalog worktree> exists, and the Convex CLI would reuse that old deployment for this lane.`
+
+**Przyczyna:** starsze wersje CLI Convex trzymały deploymenty anonimowe w katalogu domowym. CLI 1.50 nadal woli taki katalog, jeśli ma tę samą nazwę co nowy deployment, a w worktree nie ma jeszcze `.convex/local/default/config.json`. Ścieżka korzystałaby wtedy ze starych danych spoza worktree, a `lane:rm` by ich nie usunęło.
+
+**Co zrobić:** jeśli stare dane nie są potrzebne, przenieś albo usuń wskazany katalog i uruchom `lane:new` jeszcze raz. Możesz też wybrać inny slug.
 
 ## Playwright: brakuje przeglądarek
 

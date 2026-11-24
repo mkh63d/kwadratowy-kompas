@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   deletionHint,
@@ -6,6 +9,8 @@ import {
   formatLanes,
   laneNew,
   laneRm,
+  legacyAnonymousStateDir,
+  localBackendPort,
   parseArgs,
   parseWorktrees,
   pickLane,
@@ -93,7 +98,43 @@ describe("pickLane", () => {
       lane: 1,
       port: 5174,
       previewPort: 4174,
+      convexPort: null,
+      convexSitePort: null,
     });
+  });
+
+  it("gives a local lane its own Convex backend ports above the default 3210/3211", async () => {
+    await expect(
+      pickLane({ isPortFree: () => Promise.resolve(true), local: true }),
+    ).resolves.toEqual({
+      lane: 1,
+      port: 5174,
+      previewPort: 4174,
+      convexPort: 3212,
+      convexSitePort: 3213,
+    });
+  });
+
+  it("skips a local lane whose Convex port is busy or reserved", async () => {
+    const busy = new Set([3213]);
+    await expect(
+      pickLane({
+        isPortFree: (p: number) => Promise.resolve(!busy.has(p)),
+        reserved: [3214],
+        local: true,
+      }),
+    ).resolves.toMatchObject({
+      lane: 3,
+      convexPort: 3216,
+      convexSitePort: 3217,
+    });
+  });
+
+  it("ignores Convex ports for cloud lanes", async () => {
+    const busy = new Set([3212, 3213]);
+    await expect(
+      pickLane({ isPortFree: (p: number) => Promise.resolve(!busy.has(p)) }),
+    ).resolves.toMatchObject({ lane: 1 });
   });
 
   it("skips lanes with a busy dev or preview port", async () => {
@@ -170,8 +211,34 @@ describe("lanes", () => {
         port: "5174",
         previewPort: "4174",
         deployment: "dev:happy-fox-123 # team: t, project: p",
+        convexPort: null,
+        convexSitePort: null,
       },
     ]);
+  });
+
+  it("reads a local lane's Convex backend ports from its URLs", () => {
+    const [lane] = toLanes(parseWorktrees(PORCELAIN), () => ({
+      CONVEX_DEPLOYMENT: "anonymous:anonymous-app-12-login",
+      VITE_CONVEX_URL: "http://127.0.0.1:3212",
+      VITE_CONVEX_SITE_URL: "http://127.0.0.1:3213",
+    }));
+    expect(lane).toMatchObject({ convexPort: "3212", convexSitePort: "3213" });
+    const out = formatLanes(lane ? [lane] : []);
+    expect(out.split("\n")[0]).toContain("CONVEX PORTS");
+    expect(out).toContain("3212/3213");
+  });
+
+  it.each([
+    ["http://127.0.0.1:3212", "3212"],
+    ["http://localhost:3214", "3214"],
+    ["https://happy-fox-123.convex.cloud", null],
+    ["http://127.0.0.1", null],
+    ["", null],
+    [undefined, null],
+    ["not a url", null],
+  ])("localBackendPort(%s) is %s", (url, port) => {
+    expect(localBackendPort(url)).toBe(port);
   });
 
   it("formats a table and an empty state", () => {
@@ -217,18 +284,30 @@ function makeDeps(overrides: Partial<Parameters<typeof laneNew>[0]> = {}) {
     args: string[];
     cwd: string;
     env?: Record<string, string>;
+    stdin?: "ignore";
   }[] = [];
   const logs: string[] = [];
   const written: { dir: string; values: Record<string, string | number> }[] =
     [];
   const deps = {
     cwd: "F:/work/app",
+    home: "F:/no-such-home",
     run: (
       command: string,
       args: string[],
-      { cwd, env }: { cwd: string; env?: Record<string, string> },
+      {
+        cwd,
+        env,
+        stdin,
+      }: { cwd: string; env?: Record<string, string>; stdin?: "ignore" },
     ) => {
-      calls.push({ command, args, cwd, ...(env ? { env } : {}) });
+      calls.push({
+        command,
+        args,
+        cwd,
+        ...(env ? { env } : {}),
+        ...(stdin ? { stdin } : {}),
+      });
       return 0;
     },
     output: () => PORCELAIN,
@@ -293,7 +372,7 @@ describe("laneNew", () => {
     ]);
   });
 
-  it("creates an anonymous local deployment with convex dev --once when --local", async () => {
+  it("creates an anonymous local deployment on its own ports with convex dev --once when --local", async () => {
     const { deps, calls, written } = makeDeps();
     const result = await laneNew(deps, { ...args, local: true });
     expect(calls.map((c) => [c.command, c.args[0]])).toEqual([
@@ -301,10 +380,18 @@ describe("laneNew", () => {
       ["npm", "ci"],
       [process.execPath, expect.stringContaining("main.js")],
     ]);
-    expect(calls[2]?.args.slice(1)).toEqual(["dev", "--once"]);
+    expect(calls[2]?.args.slice(1)).toEqual([
+      "dev",
+      "--once",
+      "--local-cloud-port",
+      "3214",
+      "--local-site-port",
+      "3215",
+    ]);
     expect(calls[2]?.cwd).toBe(result.lanePath);
+    expect(calls[2]?.stdin).toBe("ignore");
     expect(calls[2]?.env).toEqual({
-      CONVEX_AGENT_MODE: "anonymous",
+      CONVEX_AGENT_MODE: "",
       CONVEX_ALLOW_ANONYMOUS: "",
       CONVEX_DEPLOYMENT: "",
       CONVEX_DEPLOY_KEY: "",
@@ -324,10 +411,61 @@ describe("laneNew", () => {
     ]);
   });
 
-  it("does not pass the anonymous env to cloud lanes", async () => {
+  it("does not pass the anonymous env, stdin or local ports to cloud lanes", async () => {
     const { deps, calls } = makeDeps();
-    await laneNew(deps, args);
+    const result = await laneNew(deps, args);
     expect(calls[2]?.env).toBeUndefined();
+    expect(calls[2]?.stdin).toBeUndefined();
+    expect(calls[2]?.args.join(" ")).not.toMatch(/--local-/);
+    expect(result).toMatchObject({ convexPort: null, convexSitePort: null });
+  });
+
+  it("does not reuse Convex ports another lane already holds", async () => {
+    const { deps, calls } = makeDeps({
+      readEnv: (path: string): Record<string, string> =>
+        path.endsWith("12-login")
+          ? {
+              PORT: "5174",
+              PREVIEW_PORT: "4174",
+              VITE_CONVEX_URL: "http://127.0.0.1:3214",
+              VITE_CONVEX_SITE_URL: "http://127.0.0.1:3215",
+            }
+          : {},
+    });
+    const result = await laneNew(deps, { ...args, local: true });
+    expect(result).toMatchObject({
+      port: 5176,
+      convexPort: 3216,
+      convexSitePort: 3217,
+    });
+    expect(calls[2]?.args).toContain("3216");
+  });
+
+  it("refuses a local lane whose name has legacy home-directory state", async () => {
+    const home = mkdtempSync(join(tmpdir(), "lane-home-"));
+    try {
+      const { deps, calls } = makeDeps({ home });
+      const lanePath = join("F:/work", "app-7-search");
+      mkdirSync(legacyAnonymousStateDir(home, lanePath), { recursive: true });
+      await expect(laneNew(deps, { ...args, local: true })).rejects.toThrow(
+        /anonymous-convex-backend-state.*would reuse/,
+      );
+      expect(calls).toEqual([]);
+      await expect(laneNew(deps, args)).resolves.toBeDefined();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("names the legacy state directory after the worktree directory", () => {
+    expect(
+      legacyAnonymousStateDir("/home/u", "/work/app-7-search").replaceAll(
+        "\\",
+        "/",
+      ),
+    ).toBe(
+      "/home/u/.convex/anonymous-convex-backend-state/anonymous-app-7-search",
+    );
   });
 
   it("validates before touching git", async () => {
@@ -411,5 +549,19 @@ describe("realDeps().run", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("gives the child an empty, non-TTY stdin when asked to ignore it", () => {
+    const { run } = realDeps();
+    const exitUnlessNoInput = [
+      "-e",
+      "process.exit(!process.stdin.isTTY && require('fs').readFileSync(0, 'utf8') === '' ? 0 : 7)",
+    ];
+    expect(
+      run(process.execPath, exitUnlessNoInput, {
+        cwd: process.cwd(),
+        stdin: "ignore",
+      }),
+    ).toBe(0);
   });
 });

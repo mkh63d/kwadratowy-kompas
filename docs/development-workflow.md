@@ -65,7 +65,9 @@ Szczegóły działania:
 - Porty są liczone **na maszynę**: zderzają się tylko procesy na tym samym komputerze. Dwie osoby
   mogą obie mieć ścieżkę 1 na swoich laptopach. Vite ma `strictPort`, więc zajęty port kończy się
   jawnym błędem, a nie cichą zmianą portu.
-- `lane:list` pokazuje worktree na gałęziach `feat/*` razem z portami i deploymentem.
+- `lane:list` pokazuje worktree na gałęziach `feat/*` razem z portami i deploymentem. Kolumna
+  `CONVEX PORTS` to porty lokalnego backendu Convex (`API/site`, odczytane z `VITE_CONVEX_URL` i
+  `VITE_CONVEX_SITE_URL`); ścieżki w chmurze mają tam `-`.
 - `lane:rm` usuwa worktree, ale **zostawia gałąź** (usuń ją `git branch -d`, gdy PR jest scalony)
   i **nie usuwa deploymentu Convex w chmurze**. CLI Convex 1.50 nie ma komendy `deployment delete`:
   usuń deployment w panelu Convex (Project → Deployments) albo poczekaj, aż wygaśnie po 7 dniach.
@@ -93,15 +95,37 @@ Deployment lokalny (beta) nie zużywa limitu, działa na Twojej maszynie i nie w
 ([dokumentacja](https://docs.convex.dev/cli/local-deployments)). Jego dane leżą w worktree, w
 `<ścieżka>/.convex/local/default`, więc znikają razem z nim. Nie widać ich z innej maszyny.
 
-Z `--local` skrypt uruchamia w nowym worktree `npx convex dev --once` w trybie anonimowym
-(`CONVEX_AGENT_MODE=anonymous`), tak jak ręczne uruchomienie opisane w „Start środowiska”.
-Komenda tworzy deployment, wgrywa funkcje z `convex/` i zapisuje w `.env.local`
-`CONVEX_DEPLOYMENT=anonymous:anonymous-agent` oraz `VITE_CONVEX_URL`, a skrypt dopisuje `PORT`,
-`PREVIEW_PORT` i `CONVEX_AGENT_MODE=anonymous`. `lane:new --local` nie dotyka chmury, także gdy
-CLI jest zalogowane: skrypt czyści dla tej komendy `CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`,
-`CONVEX_DEPLOYMENT_TOKEN`, `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` i
-`CONVEX_ALLOW_ANONYMOUS` odziedziczone z powłoki, bo CLI wybrałoby wskazany w nich deployment przed
-trybem anonimowym. `npx convex deployment create local` nie działa w trybie anonimowym (patrz
+Z `--local` skrypt uruchamia w nowym worktree
+`npx convex dev --once --local-cloud-port <API> --local-site-port <site>` bez terminala na
+wejściu (stdin nie jest TTY). Komenda tworzy deployment anonimowy, wgrywa funkcje z `convex/` i
+zapisuje w `.env.local` `CONVEX_DEPLOYMENT=anonymous:anonymous-<katalog worktree>` (np.
+`anonymous:anonymous-kwadratowy-kompas-12-login`), `VITE_CONVEX_URL` i `VITE_CONVEX_SITE_URL`. Skrypt
+dopisuje `PORT`, `PREVIEW_PORT` i `CONVEX_AGENT_MODE=anonymous`.
+
+Każda ścieżka lokalna ma więc własny backend: własną nazwę deploymentu i własne porty. Ścieżka N
+dostaje porty `3210 + 2N` (API) i `3211 + 2N` (HTTP actions): ścieżka 1 to `3212`/`3213`,
+ścieżka 2 to `3214`/`3215`. Główny checkout zostaje na domyślnych `3210`/`3211`. Skrypt wybiera
+je tak jak `PORT` i `PREVIEW_PORT`: pomija porty zajęte na maszynie i porty innych ścieżek. CLI
+zapisuje porty w `<ścieżka>/.convex/local/default/config.json` i przy każdym następnym
+`npm run dev` próbuje najpierw ich, więc ścieżka zostaje na swoich portach. Dzięki temu kilka
+ścieżek może mieć jednocześnie uruchomione `npm run dev`. Jeśli zapisany port jest zajęty, CLI nie
+zgłasza błędu, tylko bierze pierwszy wolny od `3210` i zapisuje go jako nowy port ścieżki (patrz
+[troubleshooting](troubleshooting.md)).
+
+Przy tworzeniu skrypt celowo nie ustawia `CONVEX_AGENT_MODE`. W tym trybie CLI 1.50 nazywa każdy
+deployment `anonymous-agent`, więc wszystkie ścieżki miałyby tę samą nazwę. Bez niego CLI nazywa
+deployment od katalogu. Tryb anonimowy wybiera wtedy dlatego, że wejście nie jest terminalem, także
+gdy CLI jest zalogowane. Każde pytanie CLI kończy się w tej sytuacji błędem, a nie domyślną
+odpowiedzią.
+
+`lane:new --local` nie dotyka chmury, także gdy CLI jest zalogowane: skrypt czyści dla tej komendy
+`CONVEX_DEPLOYMENT`, `CONVEX_DEPLOY_KEY`, `CONVEX_DEPLOYMENT_TOKEN`, `CONVEX_SELF_HOSTED_URL`,
+`CONVEX_SELF_HOSTED_ADMIN_KEY`, `CONVEX_ALLOW_ANONYMOUS` i `CONVEX_AGENT_MODE` odziedziczone z
+powłoki, bo CLI wybrałoby wskazany w nich deployment przed trybem anonimowym. Skrypt nie utworzy
+ścieżki, jeśli w katalogu domowym leży stary stan deploymentu o tej samej nazwie
+(`~/.convex/anonymous-convex-backend-state/anonymous-<katalog worktree>`, zostawiany przez starsze
+wersje CLI): CLI użyłoby go zamiast nowego katalogu w worktree, a dane nie zniknęłyby razem z
+nim. `npx convex deployment create local` nie działa w trybie anonimowym (patrz
 [troubleshooting](troubleshooting.md)).
 
 Później ścieżka zostaje lokalna dzięki `CONVEX_AGENT_MODE=anonymous` w jej `.env.local`. Bez tej
