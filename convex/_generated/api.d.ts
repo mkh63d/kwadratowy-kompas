@@ -8,11 +8,19 @@
  * @module
  */
 
+import type * as accounts_tables from "../accounts/tables.js";
 import type * as ai_config from "../ai/config.js";
 import type * as ai_index from "../ai/index.js";
 import type * as ai_mock from "../ai/mock.js";
 import type * as ai_openaiCompatible from "../ai/openaiCompatible.js";
 import type * as ai_types from "../ai/types.js";
+import type * as discord_tables from "../discord/tables.js";
+import type * as entries_tables from "../entries/tables.js";
+import type * as ingest_tables from "../ingest/tables.js";
+import type * as lib_enums from "../lib/enums.js";
+import type * as programs_tables from "../programs/tables.js";
+import type * as sources_tables from "../sources/tables.js";
+import type * as switches_tables from "../switches/tables.js";
 
 import type {
   ApiFromModules,
@@ -21,11 +29,19 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "accounts/tables": typeof accounts_tables;
   "ai/config": typeof ai_config;
   "ai/index": typeof ai_index;
   "ai/mock": typeof ai_mock;
   "ai/openaiCompatible": typeof ai_openaiCompatible;
   "ai/types": typeof ai_types;
+  "discord/tables": typeof discord_tables;
+  "entries/tables": typeof entries_tables;
+  "ingest/tables": typeof ingest_tables;
+  "lib/enums": typeof lib_enums;
+  "programs/tables": typeof programs_tables;
+  "sources/tables": typeof sources_tables;
+  "switches/tables": typeof switches_tables;
 }>;
 
 /**
