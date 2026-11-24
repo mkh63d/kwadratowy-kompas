@@ -176,6 +176,8 @@ describe("internal.sources.seed.run", () => {
           },
           promoLine: "Dołącz do społeczności",
           noCrosspost: false,
+          newsSiteOnly: false,
+          name: "SwP renamed",
         }),
       );
       const edited = await allSources(t);
@@ -185,6 +187,7 @@ describe("internal.sources.seed.run", () => {
       expect(after!.attribution?.url).toBe(
         "https://startupywpolsce.pl/spolecznosc",
       );
+      expect(after!.newsSiteOnly).toBe(false);
     });
 
     it("preserves an existing ingest token hash on re-seed", async () => {

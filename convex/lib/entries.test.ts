@@ -106,13 +106,145 @@ describe("insertEntry", () => {
       tags: ["ai", "fintech"],
     });
     expect(withOrganizer.searchText).toBe(
-      "hackathon łódź dwa dni kodu fundacja x ai fintech",
+      "hackathon łódź dwa dni kodu fundacja x ai fintech " +
+        "hackathon lodz dwa dni kodu fundacja x ai fintech",
     );
     const withoutOrganizer = await insert(t, {
       title: "Meetup",
       summary: "Wieczór",
     });
-    expect(withoutOrganizer.searchText).toBe("meetup wieczór");
+    expect(withoutOrganizer.searchText).toBe("meetup wieczór meetup wieczor");
+  });
+
+  it("adds no folded copy to searchText when nothing folds", async () => {
+    const t = await setup();
+    const entry = await insert(t, {
+      title: "Demo Day",
+      summary: "Pitch 2027",
+      tags: ["ai"],
+    });
+    expect(entry.searchText).toBe("demo day pitch 2027 ai");
+  });
+
+  it("makes searchText match both the Polish and the folded spelling", async () => {
+    const t = await setup();
+    const entry = await insert(t, {
+      title: "Zażółć gęślą jaźń w Łodzi",
+      summary: "Straße Ørsted Æble Œuvre",
+    });
+    const words = entry.searchText.split(" ");
+    for (const word of ["łodzi", "lodzi", "zażółć", "zazolc", "jaźń", "jazn"]) {
+      expect(words).toContain(word);
+    }
+    for (const word of ["strasse", "orsted", "aeble", "oeuvre"]) {
+      expect(words).toContain(word);
+    }
+  });
+
+  it("stores tags trimmed, lower-cased, deduplicated and without empties", async () => {
+    const t = await setup();
+    const entry = await insert(t, {
+      tags: ["AI", " ai ", "Łódź", "ŁÓDŹ", "", "   ", "FinTech", "fintech"],
+    });
+    expect(entry.tags).toEqual(["ai", "łódź", "fintech"]);
+    expect(entry.searchText).toBe(
+      "grant dla startupów do 50 000 zł na mvp. ai łódź fintech " +
+        "grant dla startupow do 50 000 zl na mvp. ai lodz fintech",
+    );
+  });
+
+  it("ignores lifecycle-owned fields passed on a wider object", async () => {
+    const t = await setup();
+    const otherId = await t.run((ctx) => insertEntry(ctx, BASE));
+    const widened = {
+      ...BASE,
+      title: "Kopia",
+      slug: "forced-slug",
+      status: "published",
+      publishedAt: 1,
+      featuredUntil: 2,
+      archiveReason: "manual",
+      withdrawReason: "spam",
+      mergedInto: otherId,
+      attributionSourceKeys: ["startupywpolsce-wa"],
+      noCrosspost: true,
+      searchText: "forced",
+      sortAt: 3,
+      updatedAt: 4,
+      unknownField: "x",
+    };
+    const entry = await t.run(async (ctx) => {
+      const id = await insertEntry(ctx, widened);
+      return (await ctx.db.get(id))!;
+    });
+    for (const field of [
+      "publishedAt",
+      "featuredUntil",
+      "archiveReason",
+      "withdrawReason",
+      "mergedInto",
+      "unknownField",
+    ]) {
+      expect(entry).not.toHaveProperty(field);
+    }
+    expect(entry).toMatchObject({
+      slug: "kopia",
+      status: "pending",
+      attributionSourceKeys: [],
+      noCrosspost: false,
+      searchText: "kopia do 50 000 zł na mvp. kopia do 50 000 zl na mvp.",
+    });
+    expect(entry.sortAt).not.toBe(3);
+    expect(entry.updatedAt).not.toBe(4);
+  });
+
+  it("passes every NewEntry field through", async () => {
+    const t = await setup();
+    const ids = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {});
+      const programId = await ctx.db.insert("programs", {
+        name: "Program",
+        slug: "program",
+        kind: "incubator",
+      });
+      const rawItemId = await ctx.db.insert("rawItems", {
+        sourceKey: "manual",
+        externalId: "x",
+        text: "t",
+        receivedAt: 0,
+        contentHash: "0".repeat(64),
+        state: "waiting_ai",
+      });
+      return { userId, programId, rawItemId };
+    });
+    const full: Required<NewEntry> = {
+      type: "konkurs",
+      title: "Konkurs",
+      summary: "s",
+      body: "b",
+      organizer: "o",
+      location: "Łódź",
+      isOnline: true,
+      url: "https://example.org",
+      tags: ["a"],
+      stages: ["mvp"],
+      amountText: "10 000 zł",
+      amountMaxPln: 10000,
+      cost: "paid",
+      startsAt: 10,
+      endsAt: 20,
+      deadline: 5,
+      sponsored: false,
+      sourceKey: "manual",
+      sourceRef: "ref",
+      rawItemId: ids.rawItemId,
+      programId: ids.programId,
+      discordChannelOverride: "123",
+      discordPing: true,
+      createdBy: ids.userId,
+    };
+    const entry = await insert(t, full);
+    expect(entry).toMatchObject(full);
   });
 
   it("takes attributionSourceKeys and noCrosspost from startupywpolsce-wa", async () => {
@@ -140,6 +272,39 @@ describe("insertEntry", () => {
     const entry = await insert(t, { sourceKey: "form" });
     expect(entry.attributionSourceKeys).toEqual(["form"]);
     expect(entry.noCrosspost).toBe(true);
+  });
+
+  it("takes attribution and noCrosspost from the source independently", async () => {
+    const t = await setup();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("sources", {
+        key: "attributed-crossposting",
+        name: "Attributed",
+        kind: "scraper",
+        noCrosspost: false,
+        newsSiteOnly: false,
+        attribution: { name: "Attributed" },
+      });
+      await ctx.db.insert("sources", {
+        key: "unattributed-no-crosspost",
+        name: "Unattributed",
+        kind: "scraper",
+        noCrosspost: true,
+        newsSiteOnly: false,
+      });
+    });
+    const attributed = await insert(t, {
+      sourceKey: "attributed-crossposting",
+    });
+    expect(attributed.attributionSourceKeys).toEqual([
+      "attributed-crossposting",
+    ]);
+    expect(attributed.noCrosspost).toBe(false);
+    const unattributed = await insert(t, {
+      sourceKey: "unattributed-no-crosspost",
+    });
+    expect(unattributed.attributionSourceKeys).toEqual([]);
+    expect(unattributed.noCrosspost).toBe(true);
   });
 
   it("refuses an unknown sourceKey with invalid and writes nothing", async () => {
@@ -268,6 +433,61 @@ describe("uniqueSlug", () => {
     await expect(t.run((ctx) => uniqueSlug(ctx, dashAtCut))).resolves.toBe(
       "a".repeat(59),
     );
+  });
+
+  it("folds ß, æ, œ and ø like other diacritics", async () => {
+    const t = await setup();
+    await expect(
+      t.run((ctx) => uniqueSlug(ctx, "Straße Ørsted Æble Œuvre ẞ")),
+    ).resolves.toBe("strasse-orsted-aeble-oeuvre-ss");
+  });
+
+  it("switches to a random suffix after -21 is taken", async () => {
+    const t = await setup();
+    await insertWithSlug(t, "demo");
+    for (let n = 2; n <= 21; n++) await insertWithSlug(t, `demo-${n}`);
+    const slug = await t.run((ctx) => uniqueSlug(ctx, "Demo"));
+    expect(slug).toMatch(/^demo-[a-z0-9]{6}$/);
+  });
+
+  it("returns -21 while it is still free", async () => {
+    const t = await setup();
+    await insertWithSlug(t, "demo");
+    for (let n = 2; n <= 20; n++) await insertWithSlug(t, `demo-${n}`);
+    await expect(t.run((ctx) => uniqueSlug(ctx, "Demo"))).resolves.toBe(
+      "demo-21",
+    );
+  });
+
+  it("keeps a random suffix within 60 chars", async () => {
+    const t = await setup();
+    const base = "a".repeat(60);
+    await insertWithSlug(t, base);
+    for (let n = 2; n <= 21; n++) {
+      await insertWithSlug(t, `${"a".repeat(60 - String(n).length - 1)}-${n}`);
+    }
+    const slug = await t.run((ctx) => uniqueSlug(ctx, base));
+    expect(slug).toMatch(/^a{53}-[a-z0-9]{6}$/);
+  });
+
+  it("does at most 22 slug reads, then refuses with conflict", async () => {
+    let reads = 0;
+    const everySlugTaken = {
+      db: {
+        query: () => ({
+          withIndex: () => ({
+            first: () => {
+              reads++;
+              return Promise.resolve({ _id: "taken" });
+            },
+          }),
+        }),
+      },
+    };
+    await expect(
+      appErrorCode(uniqueSlug(everySlugTaken as never, "Demo")),
+    ).resolves.toBe("conflict");
+    expect(reads).toBe(22);
   });
 
   it("falls back to a non-empty slug for a title without letters or digits", async () => {
