@@ -527,6 +527,63 @@ describe("setSwitch: backlog (R2.5)", () => {
   });
 });
 
+describe("backlogCount: read budget", () => {
+  const LIMIT = 1000;
+
+  function paused(n: number, channelId: string, action: OutboxAction) {
+    return Array.from({ length: n }, () => ({
+      channelId,
+      action,
+      status: "paused" as const,
+    }));
+  }
+
+  it.each([
+    { key: "discord", rows: paused(LIMIT + 1, OTHER_CHANNEL, "update") },
+    {
+      key: `discord.channel:${CHANNEL}`,
+      rows: paused(LIMIT + 1, CHANNEL, "create"),
+    },
+    {
+      key: `discord.crosspost:${CHANNEL}`,
+      rows: paused(LIMIT + 1, CHANNEL, "crosspost"),
+    },
+  ] as const)("caps $key at 1000", async ({ key, rows }) => {
+    const t = setup();
+    await t.run((ctx) => insertOutbox(ctx, [...rows]));
+    await expect(backlogCountOf(t, key)).resolves.toBe(LIMIT);
+  });
+
+  it("reports the cap for crosspost once 1000 paused rows of the channel are read", async () => {
+    const t = setup();
+    await t.run((ctx) =>
+      insertOutbox(ctx, [
+        ...paused(LIMIT + 5, CHANNEL, "create"),
+        ...paused(2, CHANNEL, "crosspost"),
+      ]),
+    );
+    await expect(
+      backlogCountOf(t, `discord.crosspost:${CHANNEL}`),
+    ).resolves.toBe(LIMIT);
+  });
+
+  it("counts exactly below the read budget", async () => {
+    const t = setup();
+    await t.run((ctx) =>
+      insertOutbox(ctx, [
+        ...paused(LIMIT - 2, CHANNEL, "create"),
+        ...paused(1, CHANNEL, "crosspost"),
+      ]),
+    );
+    await expect(
+      backlogCountOf(t, `discord.crosspost:${CHANNEL}`),
+    ).resolves.toBe(1);
+    await expect(backlogCountOf(t, `discord.channel:${CHANNEL}`)).resolves.toBe(
+      LIMIT - 1,
+    );
+  });
+});
+
 function backlogCountOf(t: ReturnType<typeof setup>, key: SwitchKey) {
   return t.run((ctx) => backlogCount(ctx, key));
 }

@@ -292,46 +292,187 @@ describe("api.switches.queries.publicState", () => {
 });
 
 describe("internal.switches.backlog.processBatch", () => {
+  const CHANNEL = "123";
+  type Mode = "process" | "onlyNew" | "send" | "skip" | "pause";
+
+  async function change(t: T, key: string, enabled: boolean, mode?: Mode) {
+    await t.mutation(internal.switches.cli.set, {
+      key,
+      enabled,
+      backlog: mode === "pause" ? undefined : mode,
+    });
+    return t.run(async (ctx) => {
+      const latest = await ctx.db
+        .query("switchLog")
+        .withIndex("by_key_at", (q) => q.eq("key", key))
+        .order("desc")
+        .first();
+      return latest!._id;
+    });
+  }
+
+  async function startChain(t: T, key: string, mode: Mode) {
+    const enabled = mode !== "pause";
+    await t.mutation(internal.switches.cli.set, { key, enabled: !enabled });
+    return change(t, key, enabled, mode);
+  }
+
+  function run(t: T, key: string, mode: Mode, cursor?: string) {
+    return t.mutation(internal.switches.backlog.processBatch, {
+      key,
+      mode,
+      cursor,
+    });
+  }
+
+  function encoded(chain: string, page: string | null, position: number) {
+    return JSON.stringify({ chain, page, position });
+  }
+
+  function snapshot(t: T) {
+    return t.run(async (ctx) => ({
+      switches: await ctx.db.query("switches").collect(),
+      switchLog: await ctx.db.query("switchLog").collect(),
+      outbox: await ctx.db.query("discordOutbox").collect(),
+      rawItems: await ctx.db.query("rawItems").collect(),
+      scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+    }));
+  }
+
   it.each([
-    { key: "ai", mode: "process", enabled: true },
-    { key: "ai", mode: "onlyNew", enabled: true },
-    { key: "discord", mode: "send", enabled: true },
-    { key: "discord.channel:123", mode: "skip", enabled: true },
-    { key: "discord.crosspost:123", mode: "pause", enabled: false },
+    { key: "ai", mode: "process" },
+    { key: "ai", mode: "onlyNew" },
+    { key: "discord", mode: "send" },
+    { key: `discord.channel:${CHANNEL}`, mode: "skip" },
+    { key: `discord.crosspost:${CHANNEL}`, mode: "pause" },
   ] as const)(
-    "runs $mode for $key while the switch matches and leaves nothing scheduled",
-    async ({ key, mode, enabled }) => {
+    "runs $mode for $key on the latest change and stalls without rescheduling when a batch makes no progress",
+    async ({ key, mode }) => {
       const t = setup();
-      await t.mutation(internal.switches.cli.set, { key, enabled });
-      await expect(
-        t.mutation(internal.switches.backlog.processBatch, { key, mode }),
-      ).resolves.toBe("done");
+      const chain = await startChain(t, key, mode);
+      for (const cursor of [
+        undefined,
+        chain,
+        encoded(chain, null, 0),
+        encoded(chain, "page-2", 200),
+      ]) {
+        await expect(run(t, key, mode, cursor)).resolves.toBe("stalled");
+      }
       await expect(scheduled(t)).resolves.toStrictEqual([]);
     },
   );
 
-  it.each([
-    { key: "ai", mode: "process" },
-    { key: "discord.channel:123", mode: "send" },
-    { key: "discord", mode: "pause" },
-  ] as const)(
-    "stops for $mode on $key when the switch no longer matches",
-    async ({ key, mode }) => {
-      const t = setup();
-      await t.mutation(internal.switches.cli.set, {
-        key,
-        enabled: mode === "pause",
+  it("on(send), off, on(skip) leaves only the new chain", async () => {
+    const t = setup();
+    const key = `discord.channel:${CHANNEL}`;
+    await change(t, key, false);
+    const sendChain = await change(t, key, true, "send");
+    const pauseChain = await change(t, key, false, "pause");
+    const skipChain = await change(t, key, true, "skip");
+
+    await expect(run(t, key, "send", sendChain)).resolves.toBe("stopped");
+    await expect(
+      run(t, key, "send", encoded(sendChain, null, 100)),
+    ).resolves.toBe("stopped");
+    await expect(run(t, key, "send")).resolves.toBe("stopped");
+    await expect(run(t, key, "pause", pauseChain)).resolves.toBe("stopped");
+    await expect(run(t, key, "skip", skipChain)).resolves.toBe("stalled");
+    await expect(run(t, key, "skip")).resolves.toBe("stalled");
+  });
+
+  it("a stale chain makes no writes", async () => {
+    const t = setup();
+    const sendChain = await startChain(t, "discord", "send");
+    const offChain = await change(t, "discord", false, "pause");
+    const onlyNewChain = await startChain(t, "ai", "onlyNew");
+    await change(t, "ai", false);
+    await t.run(async (ctx) => {
+      const entryId = await ctx.db.insert("entries", {
+        slug: "entry",
+        type: "event",
+        title: "Entry",
+        summary: "Summary",
+        tags: [],
+        status: "published",
+        publishedAt: 1,
+        sponsored: false,
+        sourceKey: "manual",
+        attributionSourceKeys: [],
+        noCrosspost: false,
+        discordPing: false,
+        searchText: "entry",
+        sortAt: 1,
+        updatedAt: 1,
       });
+      await ctx.db.insert("discordOutbox", {
+        entryId,
+        action: "create",
+        channelId: CHANNEL,
+        status: "paused",
+        nonce: "a".repeat(20),
+        attempts: 0,
+      });
+    });
+    await seedWaitingAi(t);
+    await change(t, "discord", true, "skip");
+    const before = await snapshot(t);
+
+    await expect(run(t, "discord", "send", sendChain)).resolves.toBe("stopped");
+    await expect(
+      run(t, "discord", "send", encoded(sendChain, null, 1)),
+    ).resolves.toBe("stopped");
+    await expect(run(t, "discord", "pause", offChain)).resolves.toBe("stopped");
+    await expect(run(t, "ai", "onlyNew", onlyNewChain)).resolves.toBe(
+      "stopped",
+    );
+    await expect(run(t, "ai", "onlyNew")).resolves.toBe("stopped");
+    await expect(snapshot(t)).resolves.toStrictEqual(before);
+  });
+
+  it("stops when the key has never changed", async () => {
+    const t = setup();
+    await expect(run(t, "ai", "process")).resolves.toBe("stopped");
+    await expect(run(t, "discord", "pause")).resolves.toBe("stopped");
+  });
+
+  it("stops a chain whose mode differs from the change that started it", async () => {
+    const t = setup();
+    const chain = await startChain(t, "discord", "send");
+    await expect(run(t, "discord", "skip", chain)).resolves.toBe("stopped");
+    await expect(run(t, "discord", "pause", chain)).resolves.toBe("stopped");
+  });
+
+  it("stops a chain started by another key's change", async () => {
+    const t = setup();
+    const otherChain = await startChain(t, "discord", "send");
+    await startChain(t, `discord.channel:${CHANNEL}`, "send");
+    await expect(
+      run(t, `discord.channel:${CHANNEL}`, "send", otherChain),
+    ).resolves.toBe("stopped");
+  });
+
+  it("throws invalid for a malformed cursor", async () => {
+    const t = setup();
+    const chain = await startChain(t, "discord", "send");
+    const userId = await t.run((ctx) => ctx.db.insert("users", {}));
+    for (const cursor of [
+      "",
+      "c",
+      "{}",
+      "null",
+      userId,
+      encoded(userId, null, 0),
+      encoded(chain, null, -1),
+      encoded(chain, null, 1.5),
+      JSON.stringify({ chain, page: 3, position: 0 }),
+      JSON.stringify({ chain, page: null }),
+      JSON.stringify({ chain, page: null, position: 0, extra: true }),
+    ]) {
       await expect(
-        t.mutation(internal.switches.backlog.processBatch, {
-          key,
-          mode,
-          cursor: "c",
-        }),
-      ).resolves.toBe("stopped");
-      await expect(scheduled(t)).resolves.toStrictEqual([]);
-    },
-  );
+        appErrorCode(run(t, "discord", "send", cursor)),
+      ).resolves.toBe("invalid");
+    }
+  });
 
   it.each([
     { key: "ai", mode: "send" },
@@ -344,10 +485,6 @@ describe("internal.switches.backlog.processBatch", () => {
     { key: "discord.channel:", mode: "pause" },
   ] as const)("throws invalid for $mode on $key", async ({ key, mode }) => {
     const t = setup();
-    await expect(
-      appErrorCode(
-        t.mutation(internal.switches.backlog.processBatch, { key, mode }),
-      ),
-    ).resolves.toBe("invalid");
+    await expect(appErrorCode(run(t, key, mode))).resolves.toBe("invalid");
   });
 });

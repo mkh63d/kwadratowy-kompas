@@ -112,39 +112,49 @@ export async function assertEnabled(
   if (!(await isEnabled(ctx, key))) appError("switch_off", key);
 }
 
+// Reads at most BACKLOG_LIMIT rows even when filtering, so a filtered count reports the cap
+// once the read budget is spent (§6.3: setSwitch never does an unbounded read).
+async function countCapped<Row>(
+  rows: { take(n: number): Promise<Row[]> },
+  matches: (row: Row) => boolean = () => true,
+): Promise<number> {
+  const read = await rows.take(BACKLOG_LIMIT);
+  if (read.length === BACKLOG_LIMIT) return BACKLOG_LIMIT;
+  return read.filter(matches).length;
+}
+
 export async function backlogCount(
   ctx: ReadCtx,
   key: SwitchKey,
 ): Promise<number> {
   const validKey = requireValidKey(key);
   if (validKey === "ai") {
-    const rows = await ctx.db
-      .query("rawItems")
-      .withIndex("by_state", (q) => q.eq("state", "waiting_ai"))
-      .take(BACKLOG_LIMIT);
-    return rows.length;
+    return countCapped(
+      ctx.db
+        .query("rawItems")
+        .withIndex("by_state", (q) => q.eq("state", "waiting_ai")),
+    );
   }
   if (validKey === "discord") {
-    const rows = await ctx.db
-      .query("discordOutbox")
-      .withIndex("by_status_nextAttempt", (q) => q.eq("status", "paused"))
-      .take(BACKLOG_LIMIT);
-    return rows.length;
+    return countCapped(
+      ctx.db
+        .query("discordOutbox")
+        .withIndex("by_status_nextAttempt", (q) => q.eq("status", "paused")),
+    );
   }
   const parts = splitPatternKey(validKey);
   if (
     parts?.pattern === "discord.channel" ||
     parts?.pattern === "discord.crosspost"
   ) {
-    let rows = ctx.db
+    const pausedInChannel = ctx.db
       .query("discordOutbox")
       .withIndex("by_channel_status", (q) =>
         q.eq("channelId", parts.id).eq("status", "paused"),
       );
-    if (parts.pattern === "discord.crosspost") {
-      rows = rows.filter((q) => q.eq(q.field("action"), "crosspost"));
-    }
-    return (await rows.take(BACKLOG_LIMIT)).length;
+    return parts.pattern === "discord.crosspost"
+      ? countCapped(pausedInChannel, (row) => row.action === "crosspost")
+      : countCapped(pausedInChannel);
   }
   return 0;
 }
