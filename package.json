@@ -27,6 +27,7 @@
     "overlap": "node scripts/overlap.mjs",
     "setup:deploy": "node scripts/setup-deploy.mjs",
     "codegen:check": "node scripts/codegen-check.mjs",
+    "seed": "convex run sources/seed:run",
     "verify": "run-s format:check lint typecheck test:coverage build test:e2e"
   },
   "dependencies": {
