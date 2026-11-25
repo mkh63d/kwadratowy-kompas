@@ -104,6 +104,28 @@ describe("hot-files-check", () => {
       expect(classify(file, patterns)).toBe("hot");
   });
 
+  it("treats the foundation root files and api/_lib as hot", () => {
+    for (const file of [
+      "convex/http.ts",
+      "convex/auth.ts",
+      "convex/auth.config.ts",
+      "convex/crons.ts",
+      "api/_lib/convex.ts",
+      "api/_lib/a/b.ts",
+    ])
+      expect(classify(file, patterns)).toBe("hot");
+  });
+
+  it("keeps look-alike feature files out of the hot list", () => {
+    for (const file of [
+      "api/mcp.ts",
+      "api/_libx/a.ts",
+      "convex/entries/crons.ts",
+      "convex/accounts/auth.ts",
+    ])
+      expect(classify(file, patterns)).toBe("normal");
+  });
+
   it("accepts CRLF bodies and * bullets, rejects other text", () => {
     expect(isAcknowledged(`x\r\n* [X] ${ACK_TEXT}\r\n`)).toBe(true);
     expect(isAcknowledged(unticked)).toBe(false);
