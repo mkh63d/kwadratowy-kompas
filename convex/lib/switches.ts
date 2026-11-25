@@ -1,4 +1,5 @@
 import type { Infer } from "convex/values";
+import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { switchesTables } from "../switches/tables";
@@ -217,7 +218,7 @@ export async function setSwitch(
   } else {
     await ctx.db.patch(stored._id, { enabled, updatedAt: at, updatedBy: by });
   }
-  await ctx.db.insert("switchLog", {
+  const change = await ctx.db.insert("switchLog", {
     key: validKey,
     from,
     to: enabled,
@@ -227,5 +228,13 @@ export async function setSwitch(
     backlog,
     backlogCount: enabled && scope !== null ? count : undefined,
   });
+  const mode = enabled ? backlog : "pause";
+  if (scope === "discord" && mode !== undefined) {
+    await ctx.scheduler.runAfter(0, internal.switches.backlog.processBatch, {
+      key: validKey,
+      mode,
+      cursor: change,
+    });
+  }
   return { backlogCount: count };
 }

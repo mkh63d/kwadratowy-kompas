@@ -3,6 +3,7 @@ import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../_generated/server";
+import { pauseInScope, releasePaused } from "../lib/discordOutbox";
 import { appError } from "../lib/errors";
 import {
   isValidSwitchKey,
@@ -22,7 +23,24 @@ type Batch = Progress & { key: SwitchKey; mode: Mode; limit: number };
 type BatchResult = { done: true } | ({ done: false } & Progress);
 type BatchHandler = (ctx: MutationCtx, batch: Batch) => Promise<BatchResult>;
 
-// Per-scope work lands with T09 (discord) and T11 (ai); until then a batch makes no progress.
+function nextStep(
+  { isDone, page, handled }: Awaited<ReturnType<typeof pauseInScope>>,
+  position: number,
+): BatchResult {
+  return isDone
+    ? { done: true }
+    : { done: false, page, position: position + handled };
+}
+
+const pause: BatchHandler = async (ctx, { key, page, position, limit }) =>
+  nextStep(await pauseInScope(ctx, { key, page, limit }), position);
+
+function release(mode: "send" | "skip"): BatchHandler {
+  return async (ctx, { key, page, position, limit }) =>
+    nextStep(await releasePaused(ctx, { key, mode, page, limit }), position);
+}
+
+// The `ai` work lands with T11; until then its batch makes no progress.
 const notImplemented: BatchHandler = (_ctx, { page, position }) =>
   Promise.resolve({ done: false, page, position });
 
@@ -31,11 +49,7 @@ const HANDLERS: Record<
   Partial<Record<Mode, BatchHandler>>
 > = {
   ai: { process: notImplemented, onlyNew: notImplemented },
-  discord: {
-    send: notImplemented,
-    skip: notImplemented,
-    pause: notImplemented,
-  },
+  discord: { send: release("send"), skip: release("skip"), pause },
 };
 
 const encodedCursor = z.strictObject({
@@ -143,6 +157,7 @@ export const processBatch = internalMutation({
     });
     if (result.done) return "done";
     if (result.page === current.page && result.position === current.position) {
+      console.warn(`Backlog chain stalled: mode "${mode}" for "${key}"`);
       return "stalled";
     }
     await ctx.scheduler.runAfter(0, internal.switches.backlog.processBatch, {

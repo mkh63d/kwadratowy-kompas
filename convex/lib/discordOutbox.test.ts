@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import schema from "../schema";
-import { enqueueDiscord, resolveRoute, skipOutboxRows } from "./discordOutbox";
+import {
+  enqueueDiscord,
+  pauseInScope,
+  releasePaused,
+  resolveRoute,
+  skipOutboxRows,
+} from "./discordOutbox";
 import { insertEntry, type NewEntry } from "./entries";
 import type { EntryStatus, OutboxAction } from "./enums";
 import { setSwitch, type SwitchKey } from "./switches";
@@ -439,6 +445,7 @@ describe("§8.4 main post", () => {
       const t = await setup();
       const entryId = await addEntry(t);
       const createId = await addRow(t, entryId, "create", status);
+      if (status === "paused") await flip(t, "discord", false);
 
       expect(await enqueue(t, entryId, "update")).toStrictEqual({
         kind: "coalesced",
@@ -684,6 +691,7 @@ describe("coalescing on (entryId, action)", () => {
     const entryId = await addEntry(t);
     if (action !== "create") await addPost(t, entryId, { channelId: ROUTED });
     const openId = await addRow(t, entryId, action, status);
+    if (status === "paused") await flip(t, "discord", false);
 
     expect(await enqueue(t, entryId, action)).toStrictEqual({
       kind: "coalesced",
@@ -1044,5 +1052,325 @@ describe("skipOutboxRows", () => {
     );
 
     expect(count).toBe(0);
+  });
+});
+
+function latestChange(t: T, key: SwitchKey) {
+  return t.run(async (ctx) => {
+    const change = await ctx.db
+      .query("switchLog")
+      .withIndex("by_key_at", (q) => q.eq("key", key))
+      .order("desc")
+      .first();
+    return change!;
+  });
+}
+
+// Runs the first batch of the chain without firing the timers, so `deliver` jobs stay pending.
+async function runChain(t: T, key: SwitchKey) {
+  const change = await latestChange(t, key);
+  return t.mutation(internal.switches.backlog.processBatch, {
+    key,
+    mode: change.to ? change.backlog! : "pause",
+    cursor: change._id,
+  });
+}
+
+async function turnOn(t: T, key: SwitchKey, backlog: "send" | "skip") {
+  await t.run((ctx) => setSwitch(ctx, { key, enabled: true, backlog }));
+  return runChain(t, key);
+}
+
+function statuses(t: T, ids: Id<"discordOutbox">[]) {
+  return Promise.all(ids.map(async (id) => (await row(t, id)).status));
+}
+
+describe("coalescing into a paused row while its switches are on (§6.3)", () => {
+  async function expectReleased(t: T, outboxId: Id<"discordOutbox">) {
+    const [job, ...others] = await deliveries(t);
+    expect(others).toStrictEqual([]);
+    expect(job.args).toStrictEqual([{ outboxId }]);
+    expect(await row(t, outboxId)).toMatchObject({
+      status: "pending",
+      scheduledFunctionId: job._id,
+    });
+  }
+
+  it.each(ALL_ACTIONS)("releases the paused %s row", async (action) => {
+    const t = await setup();
+    const entryId = await addEntry(t);
+    if (action !== "create") await addPost(t, entryId, { channelId: ROUTED });
+    const openId = await addRow(t, entryId, action, "paused");
+
+    expect(await enqueue(t, entryId, action)).toStrictEqual({
+      kind: "coalesced",
+      outboxId: openId,
+    });
+    await expectReleased(t, openId);
+  });
+
+  it("releases a paused create that an update folds into", async () => {
+    const t = await setup();
+    const entryId = await addEntry(t);
+    const createId = await addRow(t, entryId, "create", "paused");
+
+    expect(await enqueue(t, entryId, "update")).toStrictEqual({
+      kind: "coalesced",
+      outboxId: createId,
+    });
+    await expectReleased(t, createId);
+  });
+
+  it.each(["discord", `discord.channel:${POSTED}`] as const)(
+    "leaves a create paused under an update while %s is off",
+    async (key) => {
+      const t = await setup();
+      await flip(t, key, false);
+      const entryId = await addEntry(t);
+      const createId = await addRow(t, entryId, "create", "paused");
+
+      await enqueue(t, entryId, "update");
+
+      expect((await row(t, createId)).status).toBe("paused");
+      expect(await deliveries(t)).toStrictEqual([]);
+    },
+  );
+
+  it("keeps a new event that arrives before a skip chain reaches its row", async () => {
+    const t = await setup();
+    await flip(t, "discord", false);
+    const entryId = await addEntry(t);
+    const createId = await enqueueRow(t, entryId, "create");
+    await t.run((ctx) =>
+      setSwitch(ctx, { key: "discord", enabled: true, backlog: "skip" }),
+    );
+
+    await enqueue(t, entryId, "create");
+    await runChain(t, "discord");
+
+    expect((await row(t, createId)).status).toBe("pending");
+  });
+});
+
+describe("discord backlog scopes (§6.3)", () => {
+  const CROSSPOST = `discord.crosspost:${ROUTED}` as const;
+  const CHANNEL = `discord.channel:${ROUTED}` as const;
+  const SCOPES = [
+    { key: "discord", inScope: [true, true, true, true] },
+    { key: CHANNEL, inScope: [true, true, false, false] },
+    { key: CROSSPOST, inScope: [false, true, false, false] },
+  ] as const;
+
+  async function seedRows(t: T, status: RowStatus) {
+    const entryId = await addEntry(t);
+    const ids: Id<"discordOutbox">[] = [];
+    for (const [channelId, action] of [
+      [ROUTED, "update"],
+      [ROUTED, "crosspost"],
+      [OTHER, "update"],
+      [OTHER, "crosspost"],
+    ] as const) {
+      const id = await addRow(t, entryId, action, status);
+      await t.run((ctx) => ctx.db.patch(id, { channelId }));
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  function expected(
+    inScope: readonly boolean[],
+    changed: RowStatus,
+    kept: RowStatus,
+  ) {
+    return inScope.map((hit) => (hit ? changed : kept));
+  }
+
+  it("pauses pending rows and cancels their jobs when discord goes off", async () => {
+    const t = await setup();
+    const entryId = await addEntry(t);
+    await addPost(t, entryId);
+    const ids = [
+      await enqueueRow(t, entryId, "update"),
+      await enqueueRow(t, entryId, "pin"),
+    ];
+    const sentId = await addRow(t, entryId, "remind", "sent");
+    await flip(t, "discord", false);
+
+    expect(await runChain(t, "discord")).toBe("done");
+
+    expect(await statuses(t, [...ids, sentId])).toStrictEqual([
+      "paused",
+      "paused",
+      "sent",
+    ]);
+    expect((await deliveries(t)).map((job) => job.state.kind)).toStrictEqual([
+      "canceled",
+      "canceled",
+    ]);
+  });
+
+  it.each(SCOPES)(
+    "$key off pauses only its pending rows",
+    async ({ key, inScope }) => {
+      const t = await setup();
+      const ids = await seedRows(t, "pending");
+      await flip(t, key, false);
+
+      await runChain(t, key);
+
+      expect(await statuses(t, ids)).toStrictEqual(
+        expected(inScope, "paused", "pending"),
+      );
+    },
+  );
+
+  it.each(SCOPES)(
+    "$key on with send releases and schedules only its paused rows",
+    async ({ key, inScope }) => {
+      const t = await setup();
+      await flip(t, key, false);
+      const ids = await seedRows(t, "paused");
+
+      expect(await turnOn(t, key, "send")).toBe("done");
+
+      expect(await statuses(t, ids)).toStrictEqual(
+        expected(inScope, "pending", "paused"),
+      );
+      const released = ids.filter((_, i) => inScope[i]);
+      const jobs = await deliveries(t);
+      expect(jobs.map((job) => job.args[0] as unknown)).toStrictEqual(
+        released.map((outboxId) => ({ outboxId })),
+      );
+      for (const [i, id] of released.entries()) {
+        expect((await row(t, id)).scheduledFunctionId).toBe(jobs[i]._id);
+      }
+    },
+  );
+
+  it.each(SCOPES)(
+    "$key on with skip skips only its paused rows",
+    async ({ key, inScope }) => {
+      const t = await setup();
+      await flip(t, key, false);
+      const ids = await seedRows(t, "paused");
+
+      await turnOn(t, key, "skip");
+
+      expect(await statuses(t, ids)).toStrictEqual(
+        expected(inScope, "skipped", "paused"),
+      );
+      for (const [i, id] of ids.entries()) {
+        expect((await row(t, id)).skipReason).toBe(
+          inScope[i] ? "backlog_skipped" : undefined,
+        );
+      }
+      expect(await deliveries(t)).toStrictEqual([]);
+    },
+  );
+
+  it.each([
+    { off: CHANNEL, released: [false, false, true, true] },
+    { off: CROSSPOST, released: [true, false, true, true] },
+  ])(
+    "a discord send leaves paused the rows held by $off",
+    async ({ off, released }) => {
+      const t = await setup();
+      await flip(t, "discord", false);
+      await flip(t, off, false);
+      const ids = await seedRows(t, "paused");
+
+      expect(await turnOn(t, "discord", "send")).toBe("done");
+
+      expect(await statuses(t, ids)).toStrictEqual(
+        expected(released, "pending", "paused"),
+      );
+    },
+  );
+
+  it.each([
+    { key: CHANNEL, off: "discord" },
+    { key: CROSSPOST, off: "discord" },
+    { key: CROSSPOST, off: CHANNEL },
+  ] as const)(
+    "a $key send releases nothing while $off is off",
+    async ({ key, off }) => {
+      const t = await setup();
+      await flip(t, off, false);
+      await flip(t, key, false);
+      const ids = await seedRows(t, "paused");
+
+      expect(await turnOn(t, key, "send")).toBe("done");
+
+      expect(await statuses(t, ids)).toStrictEqual([
+        "paused",
+        "paused",
+        "paused",
+        "paused",
+      ]);
+      expect(await deliveries(t)).toStrictEqual([]);
+    },
+  );
+
+  it("skip also takes delete rows and rows held by another switch", async () => {
+    const t = await setup();
+    await flip(t, "discord", false);
+    await flip(t, CHANNEL, false);
+    const entryId = await addEntry(t);
+    const ids = [await addRow(t, entryId, "delete", "paused")];
+    const heldId = await addRow(t, entryId, "update", "paused");
+    await t.run((ctx) => ctx.db.patch(heldId, { channelId: ROUTED }));
+
+    await turnOn(t, "discord", "skip");
+
+    expect(await statuses(t, [...ids, heldId])).toStrictEqual([
+      "skipped",
+      "skipped",
+    ]);
+  });
+
+  it("a send leaves a row with a malformed channel id paused", async () => {
+    const t = await setup();
+    await flip(t, "discord", false);
+    const entryId = await addEntry(t);
+    const badId = await addRow(t, entryId, "update", "paused");
+    await t.run((ctx) => ctx.db.patch(badId, { channelId: "#granty" }));
+    const goodId = await addRow(t, entryId, "pin", "paused");
+
+    expect(await turnOn(t, "discord", "send")).toBe("done");
+
+    expect(await statuses(t, [badId, goodId])).toStrictEqual([
+      "paused",
+      "pending",
+    ]);
+  });
+
+  it("reports its progress page by page", async () => {
+    const t = await setup();
+    const entryId = await addEntry(t);
+    for (let i = 0; i < 3; i++) await addRow(t, entryId, "update", "pending");
+
+    const first = await t.run((ctx) =>
+      pauseInScope(ctx, { key: "discord", page: null, limit: 2 }),
+    );
+    expect(first).toMatchObject({ isDone: false, handled: 2 });
+    const second = await t.run((ctx) =>
+      pauseInScope(ctx, { key: "discord", page: first.page, limit: 2 }),
+    );
+    expect(second).toMatchObject({ isDone: true, handled: 1 });
+
+    const released = await t.run((ctx) =>
+      releasePaused(ctx, {
+        key: "discord",
+        mode: "skip",
+        page: null,
+        limit: 2,
+      }),
+    );
+    expect(released).toMatchObject({ isDone: false, handled: 2 });
+    expect((await rows(t)).map((stored) => stored.status)).toStrictEqual([
+      "skipped",
+      "skipped",
+      "paused",
+    ]);
   });
 });

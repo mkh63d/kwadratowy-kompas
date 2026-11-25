@@ -1,6 +1,6 @@
 import { convexTest } from "convex-test";
 import { ConvexError, type Value } from "convex/values";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import schema from "../schema";
@@ -134,6 +134,15 @@ async function tables(ctx: Ctx) {
 function setup() {
   return convexTest(schema, modules);
 }
+
+// `discord*` changes schedule backlog chains; fake timers keep them from running.
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("switch keys", () => {
   it("declares exactly the §6.2 static keys and patterns", () => {
@@ -594,5 +603,120 @@ describe("backlogCount", () => {
     await expect(
       appErrorCode(backlogCountOf(t, asKey("discord.channel:"))),
     ).resolves.toBe("invalid");
+  });
+});
+
+describe("setSwitch: backlog chains (§6.3)", () => {
+  const DISCORD_KEYS = [
+    "discord",
+    `discord.channel:${CHANNEL}`,
+    `discord.crosspost:${CHANNEL}`,
+  ] as const;
+
+  function scheduledCalls(t: ReturnType<typeof setup>) {
+    return t.run(async (ctx) => {
+      const jobs = await ctx.db.system.query("_scheduled_functions").collect();
+      return jobs.map(({ name, args }) => ({
+        name,
+        args: args[0] as unknown,
+      }));
+    });
+  }
+
+  async function startedBy(t: ReturnType<typeof setup>) {
+    const { switchLog } = await t.run(tables);
+    return switchLog.at(-1)!._id;
+  }
+
+  async function storeSwitch(
+    t: ReturnType<typeof setup>,
+    key: SwitchKey,
+    enabled: boolean,
+  ) {
+    await t.run((ctx) =>
+      ctx.db.insert("switches", { key, enabled, updatedAt: 0 }),
+    );
+  }
+
+  it.each(DISCORD_KEYS)("schedules a pause chain for %s off", async (key) => {
+    const t = setup();
+    await storeSwitch(t, key, true);
+
+    await t.run((ctx) => setSwitch(ctx, { key, enabled: false }));
+
+    await expect(scheduledCalls(t)).resolves.toStrictEqual([
+      {
+        name: "switches/backlog:processBatch",
+        args: { key, mode: "pause", cursor: await startedBy(t) },
+      },
+    ]);
+  });
+
+  it.each(
+    DISCORD_KEYS.flatMap((key) =>
+      (["send", "skip"] as const).map((mode) => [key, mode] as const),
+    ),
+  )("schedules a chain for %s on with %s", async (key, mode) => {
+    const t = setup();
+    await storeSwitch(t, key, false);
+
+    await t.run((ctx) => setSwitch(ctx, { key, enabled: true, backlog: mode }));
+
+    await expect(scheduledCalls(t)).resolves.toStrictEqual([
+      {
+        name: "switches/backlog:processBatch",
+        args: { key, mode, cursor: await startedBy(t) },
+      },
+    ]);
+  });
+
+  it.each(DISCORD_KEYS)(
+    "schedules nothing for %s on without a mode or for a no-op",
+    async (key) => {
+      const t = setup();
+      await storeSwitch(t, key, false);
+      await t.run((ctx) => setSwitch(ctx, { key, enabled: false }));
+      await t.run((ctx) => setSwitch(ctx, { key, enabled: true }));
+      await t.run((ctx) =>
+        setSwitch(ctx, { key, enabled: true, backlog: "skip" }),
+      );
+
+      await expect(scheduledCalls(t)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each(["mcp", "scraping", "promo.source:parp-rss"] as const)(
+    "schedules nothing for %s",
+    async (key) => {
+      const t = setup();
+      await t.run((ctx) => setSwitch(ctx, { key, enabled: false }));
+
+      await expect(scheduledCalls(t)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("returns 1000 for a 1200-row discord backlog and leaves the rows to the chain", async () => {
+    const t = setup();
+    await t.run((ctx) =>
+      insertOutbox(
+        ctx,
+        Array.from({ length: 1200 }, () => ({
+          channelId: CHANNEL,
+          action: "create" as const,
+          status: "paused" as const,
+        })),
+      ),
+    );
+    const outbox = () =>
+      t.run((ctx) => ctx.db.query("discordOutbox").collect());
+    const before = await outbox();
+
+    await expect(backlogCountOf(t, "discord")).resolves.toBe(1000);
+    await expect(
+      t.run((ctx) =>
+        setSwitch(ctx, { key: "discord", enabled: true, backlog: "send" }),
+      ),
+    ).resolves.toStrictEqual({ backlogCount: 1000 });
+    await expect(outbox()).resolves.toStrictEqual(before);
   });
 });

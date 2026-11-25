@@ -1,9 +1,9 @@
 import { convexTest } from "convex-test";
 import { ConvexError } from "convex/values";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { AppErrorCode } from "../lib/errors";
-import type { Role } from "../lib/enums";
+import type { OutboxAction, OutboxStatus, Role } from "../lib/enums";
 import { createUser } from "../lib/testing/fixtures";
 import schema from "../schema";
 
@@ -49,6 +49,16 @@ async function seedWaitingAi(t: T) {
     }),
   );
 }
+
+// `discord*` changes schedule backlog chains; they run only when a test advances the timers.
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("api.switches.mutations.set", () => {
   it("refuses an anonymous caller and writes nothing", async () => {
@@ -339,15 +349,11 @@ describe("internal.switches.backlog.processBatch", () => {
     }));
   }
 
-  it.each([
-    { key: "ai", mode: "process" },
-    { key: "ai", mode: "onlyNew" },
-    { key: "discord", mode: "send" },
-    { key: `discord.channel:${CHANNEL}`, mode: "skip" },
-    { key: `discord.crosspost:${CHANNEL}`, mode: "pause" },
-  ] as const)(
-    "runs $mode for $key on the latest change and stalls without rescheduling when a batch makes no progress",
-    async ({ key, mode }) => {
+  it.each(["process", "onlyNew"] as const)(
+    "warns and stalls without rescheduling when an ai %s batch makes no progress",
+    async (mode) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const key = "ai";
       const t = setup();
       const chain = await startChain(t, key, mode);
       for (const cursor of [
@@ -359,6 +365,29 @@ describe("internal.switches.backlog.processBatch", () => {
         await expect(run(t, key, mode, cursor)).resolves.toBe("stalled");
       }
       await expect(scheduled(t)).resolves.toStrictEqual([]);
+      expect(warn).toHaveBeenCalledTimes(4);
+      expect(warn).toHaveBeenCalledWith(
+        `Backlog chain stalled: mode "${mode}" for "ai"`,
+      );
+    },
+  );
+
+  it.each([
+    { key: "discord", mode: "send" },
+    { key: `discord.channel:${CHANNEL}`, mode: "skip" },
+    { key: `discord.crosspost:${CHANNEL}`, mode: "pause" },
+  ] as const)(
+    "runs $mode for $key on the latest change and finishes an empty scope",
+    async ({ key, mode }) => {
+      const warn = vi.spyOn(console, "warn");
+      const t = setup();
+      const chain = await startChain(t, key, mode);
+      const before = await scheduled(t);
+      for (const cursor of [undefined, chain, encoded(chain, null, 0)]) {
+        await expect(run(t, key, mode, cursor)).resolves.toBe("done");
+      }
+      await expect(scheduled(t)).resolves.toStrictEqual(before);
+      expect(warn).not.toHaveBeenCalled();
     },
   );
 
@@ -376,8 +405,8 @@ describe("internal.switches.backlog.processBatch", () => {
     ).resolves.toBe("stopped");
     await expect(run(t, key, "send")).resolves.toBe("stopped");
     await expect(run(t, key, "pause", pauseChain)).resolves.toBe("stopped");
-    await expect(run(t, key, "skip", skipChain)).resolves.toBe("stalled");
-    await expect(run(t, key, "skip")).resolves.toBe("stalled");
+    await expect(run(t, key, "skip", skipChain)).resolves.toBe("done");
+    await expect(run(t, key, "skip")).resolves.toBe("done");
   });
 
   it("a stale chain makes no writes", async () => {
@@ -463,9 +492,7 @@ describe("internal.switches.backlog.processBatch", () => {
     await expect(
       run(t, "discord", "send", encoded(firstChain, null, 100)),
     ).resolves.toBe("stopped");
-    await expect(run(t, "discord", "send", secondChain)).resolves.toBe(
-      "stalled",
-    );
+    await expect(run(t, "discord", "send", secondChain)).resolves.toBe("done");
   });
 
   it("keeps a chain running when another key changes", async () => {
@@ -473,8 +500,8 @@ describe("internal.switches.backlog.processBatch", () => {
     const chain = await startChain(t, "discord", "send");
     await change(t, "mcp", false);
 
-    await expect(run(t, "discord", "send", chain)).resolves.toBe("stalled");
-    await expect(run(t, "discord", "send")).resolves.toBe("stalled");
+    await expect(run(t, "discord", "send", chain)).resolves.toBe("done");
+    await expect(run(t, "discord", "send")).resolves.toBe("done");
   });
 
   it("throws invalid for a malformed cursor", async () => {
@@ -512,5 +539,218 @@ describe("internal.switches.backlog.processBatch", () => {
   ] as const)("throws invalid for $mode on $key", async ({ key, mode }) => {
     const t = setup();
     await expect(appErrorCode(run(t, key, mode))).resolves.toBe("invalid");
+  });
+});
+
+describe("discord backlog chains (§6.3)", () => {
+  const CHANNEL = "111111111111111111";
+  const OFF_CHANNEL = "222222222222222222";
+
+  function set(t: T, key: string, enabled: boolean, backlog?: "send" | "skip") {
+    return t.mutation(internal.switches.cli.set, { key, enabled, backlog });
+  }
+
+  async function seed(
+    t: T,
+    status: OutboxStatus,
+    n: number,
+    channelId = CHANNEL,
+    action: OutboxAction = "create",
+  ) {
+    await t.run(async (ctx) => {
+      const entryId = await ctx.db.insert("entries", {
+        slug: "entry",
+        type: "event",
+        title: "Entry",
+        summary: "Summary",
+        tags: [],
+        status: "published",
+        publishedAt: 1,
+        sponsored: false,
+        sourceKey: "manual",
+        attributionSourceKeys: [],
+        noCrosspost: false,
+        discordPing: false,
+        searchText: "entry",
+        sortAt: 1,
+        updatedAt: 1,
+      });
+      for (let i = 0; i < n; i++) {
+        await ctx.db.insert("discordOutbox", {
+          entryId,
+          action,
+          channelId,
+          status,
+          nonce: "a".repeat(20),
+          attempts: 0,
+        });
+      }
+    });
+  }
+
+  function outbox(t: T) {
+    return t.run((ctx) => ctx.db.query("discordOutbox").collect());
+  }
+
+  async function count(t: T, status: OutboxStatus, channelId?: string) {
+    return (await outbox(t)).filter(
+      (row) =>
+        row.status === status &&
+        (channelId === undefined || row.channelId === channelId),
+    ).length;
+  }
+
+  async function jobs(t: T, name: string) {
+    return (await scheduled(t)).filter((job) => job.name === name);
+  }
+
+  async function batches(t: T) {
+    const runs = await jobs(t, "switches/backlog:processBatch");
+    return runs.map(({ args, state }) => ({
+      args: args[0] as { key: string; mode: string; cursor: string },
+      state: state.kind,
+    }));
+  }
+  const deliveries = (t: T) => jobs(t, "discord/actions:deliver");
+
+  // Runs what is scheduled now, not what those runs schedule in turn.
+  async function step(t: T) {
+    vi.runOnlyPendingTimers();
+    await t.finishInProgressScheduledFunctions();
+  }
+
+  function finish(t: T) {
+    return t.finishAllScheduledFunctions(vi.runAllTimers);
+  }
+
+  function positions(runs: Awaited<ReturnType<typeof batches>>) {
+    return runs
+      .slice(1)
+      .map(
+        ({ args }) =>
+          (JSON.parse(args.cursor) as { position: number }).position,
+      );
+  }
+
+  it.each([
+    { from: "paused", on: true, backlog: "send", to: "pending" },
+    { from: "paused", on: true, backlog: "skip", to: "skipped" },
+    { from: "pending", on: false, backlog: undefined, to: "paused" },
+  ] as const)(
+    "moves a backlog of 250 $from rows to $to in batches of 100",
+    async ({ from, on, backlog, to }) => {
+      const t = setup();
+      if (!on) await set(t, "discord", true);
+      await seed(t, from, 250);
+      const before = await outbox(t);
+
+      await set(t, "discord", on, backlog);
+      await expect(outbox(t)).resolves.toStrictEqual(before);
+      await expect(deliveries(t)).resolves.toStrictEqual([]);
+
+      for (const handled of [100, 200, 250]) {
+        await step(t);
+        await expect(count(t, to)).resolves.toBe(handled);
+        await expect(count(t, from)).resolves.toBe(250 - handled);
+      }
+      await finish(t);
+
+      const runs = await batches(t);
+      expect(runs.map((run) => run.state)).toStrictEqual([
+        "success",
+        "success",
+        "success",
+      ]);
+      expect(positions(runs)).toStrictEqual([100, 200]);
+      await expect(deliveries(t)).resolves.toHaveLength(
+        to === "pending" ? 250 : 0,
+      );
+    },
+  );
+
+  it("paginates past rows that a send must leave paused", async () => {
+    const t = setup();
+    await set(t, `discord.channel:${OFF_CHANNEL}`, false);
+    await finish(t);
+    await seed(t, "paused", 150, OFF_CHANNEL);
+    await seed(t, "paused", 100);
+
+    await set(t, "discord", true, "send");
+    await finish(t);
+
+    await expect(count(t, "paused", OFF_CHANNEL)).resolves.toBe(150);
+    await expect(count(t, "pending", CHANNEL)).resolves.toBe(100);
+    const runs = (await batches(t)).filter((run) => run.args.key === "discord");
+    expect(runs).toHaveLength(3);
+    expect(positions(runs)).toStrictEqual([100, 200]);
+  });
+
+  it("paginates a crosspost chain past the other rows of its channel", async () => {
+    const t = setup();
+    const key = `discord.crosspost:${CHANNEL}`;
+    await set(t, "discord", true);
+    await set(t, key, false);
+    await finish(t);
+    await seed(t, "paused", 1, CHANNEL, "crosspost");
+    await seed(t, "paused", 150);
+    await seed(t, "paused", 1, CHANNEL, "crosspost");
+
+    await set(t, key, true, "send");
+    await finish(t);
+
+    await expect(count(t, "pending")).resolves.toBe(2);
+    await expect(count(t, "paused")).resolves.toBe(150);
+    const runs = (await batches(t)).filter((run) => run.args.key === key);
+    expect(
+      positions(runs.filter((run) => run.args.mode === "send")),
+    ).toStrictEqual([100]);
+  });
+
+  it("stops the send chain when the switch goes off again and pauses every row", async () => {
+    const t = setup();
+    await seed(t, "paused", 250);
+    await set(t, "discord", true, "send");
+    await step(t);
+    await expect(count(t, "pending")).resolves.toBe(100);
+
+    await set(t, "discord", false);
+    await finish(t);
+
+    await expect(count(t, "paused")).resolves.toBe(250);
+    const sendRuns = (await batches(t)).filter(
+      (run) => run.args.mode === "send",
+    );
+    expect(sendRuns).toHaveLength(2);
+  });
+
+  it("makes no further writes from a skip chain once the switch is off", async () => {
+    const t = setup();
+    await seed(t, "paused", 250);
+    await set(t, "discord", true, "skip");
+    await step(t);
+
+    await set(t, "discord", false);
+    await finish(t);
+
+    await expect(count(t, "skipped")).resolves.toBe(100);
+    await expect(count(t, "paused")).resolves.toBe(150);
+  });
+
+  it("stops the pause chain when the switch comes back on", async () => {
+    const t = setup();
+    await set(t, "discord", true);
+    await seed(t, "pending", 250);
+    await set(t, "discord", false);
+    await step(t);
+    await expect(count(t, "paused")).resolves.toBe(100);
+
+    await set(t, "discord", true, "send");
+    await finish(t);
+
+    await expect(count(t, "pending")).resolves.toBe(250);
+    const pauseRuns = (await batches(t)).filter(
+      (run) => run.args.mode === "pause",
+    );
+    expect(pauseRuns).toHaveLength(2);
   });
 });
