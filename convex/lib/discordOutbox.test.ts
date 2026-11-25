@@ -1362,6 +1362,7 @@ describe("discord backlog scopes (§6.3)", () => {
       releasePaused(ctx, {
         key: "discord",
         mode: "skip",
+        chosenAt: Date.now(),
         page: null,
         limit: 2,
       }),

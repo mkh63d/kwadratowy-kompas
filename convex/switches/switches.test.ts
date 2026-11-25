@@ -706,6 +706,47 @@ describe("discord backlog chains (§6.3)", () => {
     ).toStrictEqual([100]);
   });
 
+  it("skips only the backlog that existed when skip was chosen", async () => {
+    const t = setup();
+    await set(t, `discord.channel:${OFF_CHANNEL}`, false);
+    await finish(t);
+    await seed(t, "paused", 150);
+    await set(t, "discord", true, "skip");
+    await step(t);
+    await expect(count(t, "skipped")).resolves.toBe(100);
+
+    vi.setSystemTime(Date.now() + 1000);
+    await seed(t, "paused", 1);
+    await seed(t, "paused", 1, OFF_CHANNEL);
+    await finish(t);
+
+    await expect(count(t, "skipped")).resolves.toBe(150);
+    await expect(count(t, "pending", CHANNEL)).resolves.toBe(1);
+    await expect(count(t, "paused", OFF_CHANNEL)).resolves.toBe(1);
+    await expect(deliveries(t)).resolves.toHaveLength(1);
+  });
+
+  it("spares a newer row that a later pause moved into the backlog", async () => {
+    const t = setup();
+    const key = `discord.channel:${OFF_CHANNEL}`;
+    await seed(t, "paused", 150);
+    await set(t, "discord", true, "skip");
+    await step(t);
+
+    vi.setSystemTime(Date.now() + 1000);
+    await seed(t, "pending", 1, OFF_CHANNEL);
+    await set(t, key, false);
+    await t.mutation(internal.switches.backlog.processBatch, {
+      key,
+      mode: "pause",
+    });
+    await expect(count(t, "paused", OFF_CHANNEL)).resolves.toBe(1);
+    await finish(t);
+
+    await expect(count(t, "skipped")).resolves.toBe(150);
+    await expect(count(t, "paused", OFF_CHANNEL)).resolves.toBe(1);
+  });
+
   it("stops the send chain when the switch goes off again and pauses every row", async () => {
     const t = setup();
     await seed(t, "paused", 250);

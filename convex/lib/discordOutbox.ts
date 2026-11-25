@@ -288,22 +288,29 @@ export async function pauseInScope(
   return progress;
 }
 
+// `chosenAt` is when the mode was chosen: "skip" covers only the backlog that existed then, and
+// newer rows are treated as in "send".
 export async function releasePaused(
   ctx: MutationCtx,
   {
     mode,
+    chosenAt,
     ...scope
-  }: ScopePage & { mode: Extract<BacklogMode, "send" | "skip"> },
+  }: ScopePage & {
+    mode: Extract<BacklogMode, "send" | "skip">;
+    chosenAt: number;
+  },
 ): Promise<ScopeProgress> {
   const { rows, progress } = await readScopePage(ctx, "paused", scope);
   for (const row of rows) {
-    if (mode === "send") {
-      await releaseIfAllowed(ctx, row);
-    } else {
+    // `_creationTime` has a sub-millisecond fraction, `chosenAt` has none.
+    if (mode === "skip" && row._creationTime < chosenAt + 1) {
       await ctx.db.patch(row._id, {
         status: "skipped",
         skipReason: "backlog_skipped",
       });
+    } else {
+      await releaseIfAllowed(ctx, row);
     }
   }
   return progress;

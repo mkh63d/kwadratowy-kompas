@@ -19,7 +19,12 @@ type Mode = BacklogMode | "pause";
 type Progress = { page: string | null; position: number };
 type ChainCursor = Progress & { chain: Id<"switchLog"> };
 
-type Batch = Progress & { key: SwitchKey; mode: Mode; limit: number };
+type Batch = Progress & {
+  key: SwitchKey;
+  mode: Mode;
+  chosenAt: number;
+  limit: number;
+};
 type BatchResult = { done: true } | ({ done: false } & Progress);
 type BatchHandler = (ctx: MutationCtx, batch: Batch) => Promise<BatchResult>;
 
@@ -36,8 +41,11 @@ const pause: BatchHandler = async (ctx, { key, page, position, limit }) =>
   nextStep(await pauseInScope(ctx, { key, page, limit }), position);
 
 function release(mode: "send" | "skip"): BatchHandler {
-  return async (ctx, { key, page, position, limit }) =>
-    nextStep(await releasePaused(ctx, { key, mode, page, limit }), position);
+  return async (ctx, { key, chosenAt, page, position, limit }) =>
+    nextStep(
+      await releasePaused(ctx, { key, mode, chosenAt, page, limit }),
+      position,
+    );
 }
 
 // The `ai` work lands with T11; until then its batch makes no progress.
@@ -151,6 +159,7 @@ export const processBatch = internalMutation({
     const result = await handler(ctx, {
       key,
       mode,
+      chosenAt: latest.at,
       page: current.page,
       position: current.position,
       limit: BATCH_SIZE,
