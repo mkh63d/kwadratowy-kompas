@@ -598,10 +598,17 @@ describe("delete supersedes open rows", () => {
     await addPost(t, entryId);
     const other = await addEntry(t);
     const updateId = await enqueueRow(t, entryId, "update");
-    const pausedIds = [
-      await addRow(t, entryId, "pin", "paused"),
-      await addRow(t, entryId, "archive", "paused"),
-    ];
+    const pausedIds: Id<"discordOutbox">[] = [];
+    for (const action of [
+      "create",
+      "pin",
+      "unpin",
+      "crosspost",
+      "remind",
+      "archive",
+    ] as const) {
+      pausedIds.push(await addRow(t, entryId, action, "paused"));
+    }
     const keptIds = [
       await addRow(t, entryId, "remind", "sent"),
       await addRow(t, entryId, "crosspost", "failed"),
@@ -859,9 +866,17 @@ describe("resolveRoute (§8.3)", () => {
     const t = await setup();
     await addRoute(t, { channelId: OTHER, tag: "fintech" });
     await addRoute(t, { channelId: TAGGED, tag: "ai" });
-    const entryId = await addEntry(t, { tags: ["brak", "ai", "fintech"] });
+    const entryId = await addEntry(t, { tags: ["brak", "fintech", "ai"] });
 
-    expect((await resolve(t, entryId))?.channelId).toBe(TAGGED);
+    expect((await resolve(t, entryId))?.channelId).toBe(OTHER);
+  });
+
+  it("does not fall back to a szkolenie route for a paid szkolenie", async () => {
+    const t = await setup();
+    await addRoute(t, { channelId: OTHER, entryType: "szkolenie" });
+    const entryId = await addEntry(t, { type: "szkolenie", cost: "paid" });
+
+    expect(await resolve(t, entryId)).toBeNull();
   });
 
   it("falls back to the untagged route of the type", async () => {
@@ -883,6 +898,75 @@ describe("resolveRoute (§8.3)", () => {
     const entryId = await addEntry(t, { type: "konkurs", tags: ["fintech"] });
 
     expect(await resolve(t, entryId)).toBeNull();
+  });
+});
+
+describe("malformed channel id (R4.4)", () => {
+  const cases = ["", "#granty"].flatMap((channelId) =>
+    [true, false].map((discordOn) => [channelId, discordOn] as const),
+  );
+
+  async function expectNoRoute(t: T, entryId: Id<"entries">) {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(await enqueue(t, entryId, "create")).toStrictEqual(
+      skippedBy("no_route"),
+    );
+    expect(await rows(t)).toStrictEqual([]);
+    expect(await deliveries(t)).toStrictEqual([]);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(entryId),
+    );
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(cases)(
+    "override %j is no_route, without falling through (discord on: %s)",
+    async (channelId, discordOn) => {
+      const t = await setup();
+      await flip(t, "discord", discordOn);
+      const entryId = await addEntry(
+        t,
+        {},
+        { discordChannelOverride: channelId },
+      );
+
+      await expectNoRoute(t, entryId);
+    },
+  );
+
+  it.each(cases)(
+    "configured route %j is no_route (discord on: %s)",
+    async (channelId, discordOn) => {
+      const t = await setup();
+      await flip(t, "discord", discordOn);
+      await addRoute(t, { channelId, entryType: "konkurs" });
+      const entryId = await addEntry(t, { type: "konkurs" });
+
+      await expectNoRoute(t, entryId);
+    },
+  );
+
+  it.each<[string, RouteDoc]>([
+    ["a tagged route", { tag: "ai" }],
+    ["another route for the same type", {}],
+  ])("passes over %s with a malformed id", async (_label, bad) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const t = newTest();
+    await t.mutation(internal.sources.seed.run, {});
+    await addRoute(t, { ...bad, channelId: "#granty" });
+    await addRoute(t, { channelId: OTHER });
+    const entryId = await addEntry(t, { tags: ["ai"] });
+
+    const route = await t.run(async (ctx) =>
+      resolveRoute(ctx, (await ctx.db.get(entryId))!),
+    );
+
+    expect(route?.channelId).toBe(OTHER);
+    expect(warn).toHaveBeenCalledOnce();
   });
 });
 

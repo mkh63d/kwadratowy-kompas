@@ -5,7 +5,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { discordTables } from "../discord/tables";
 import { outboxActionValidator, type OutboxAction } from "./enums";
 import { appError } from "./errors";
-import { isEnabled } from "./switches";
+import { isEnabled, isValidSwitchKey } from "./switches";
 import { isListed } from "./visibility";
 
 type SkipReason = NonNullable<
@@ -34,7 +34,7 @@ type ReadCtx = Pick<QueryCtx, "db">;
 
 type RoutedEntry = Pick<
   Doc<"entries">,
-  "type" | "tags" | "cost" | "sponsored" | "discordChannelOverride"
+  "_id" | "type" | "tags" | "cost" | "sponsored" | "discordChannelOverride"
 >;
 
 const NONCE_LENGTH = 20;
@@ -76,25 +76,41 @@ async function channelAllowsCrosspost(
   return routes.some((route) => route.crosspost);
 }
 
+// A malformed id cannot name a `discord.channel:*` switch, so using it would throw and roll back
+// the caller (or, with `discord` off, store a row that can never be released).
+function isUsableChannel(entry: RoutedEntry, channelId: string): boolean {
+  const usable = isValidSwitchKey(`discord.channel:${channelId}`);
+  if (!usable) {
+    console.warn(
+      `Ignoring a malformed Discord channel id for entry ${entry._id}`,
+    );
+  }
+  return usable;
+}
+
 async function matchChannel(
   ctx: ReadCtx,
   entry: RoutedEntry,
 ): Promise<string | null> {
-  if (entry.discordChannelOverride !== undefined) {
-    return entry.discordChannelOverride;
+  const override = entry.discordChannelOverride;
+  if (override !== undefined) {
+    return isUsableChannel(entry, override) ? override : null;
   }
   const entryType =
     entry.type === "szkolenie" && entry.cost === "paid" && !entry.sponsored
       ? "event"
       : entry.type;
   for (const tag of [...entry.tags, undefined]) {
-    const route = await ctx.db
+    const routes = await ctx.db
       .query("discordRoutes")
       .withIndex("by_type_tag", (q) =>
         q.eq("entryType", entryType).eq("tag", tag),
       )
-      .first();
-    if (route !== null) return route.channelId;
+      .collect();
+    const route = routes.find(({ channelId }) =>
+      isUsableChannel(entry, channelId),
+    );
+    if (route !== undefined) return route.channelId;
   }
   return null;
 }
